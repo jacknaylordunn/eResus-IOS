@@ -7,41 +7,38 @@
 
 import SwiftUI
 
-// MARK: - Summary Modal
 struct SummaryView: View {
     let events: [Event]
+    let totalTime: TimeInterval
+    
     @Environment(\.dismiss) private var dismiss
-
-    private var summaryText: String {
-        var text = "eResus Event Summary\n"
-        if let lastEvent = events.first {
-            text += "Total Arrest Time: \(formatTime(lastEvent.timestamp))\n\n"
-        }
-        text += "--- Event Log ---\n"
-        text += events.reversed().map { event in
-            "[\(formatTime(event.timestamp))] \(event.message)"
-        }.joined(separator: "\n")
-        return text
+    
+    // Sort events chronologically to ensure correct order
+    private var sortedEvents: [Event] {
+        events.sorted { $0.timestamp < $1.timestamp }
     }
 
     var body: some View {
         NavigationView {
-            VStack {
-                ScrollView {
-                    Text(summaryText)
-                        .font(.system(.body, design: .monospaced))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding()
-                }
-                
-                ShareLink(item: summaryText) {
-                    Label("Copy & Share", systemImage: "square.and.arrow.up")
-                        .font(.headline.bold())
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.accentColor)
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
+            ScrollView {
+                VStack(alignment: .leading) {
+                    Text("Total Arrest Time: \(TimeFormatter.format(totalTime))")
+                        .font(.headline)
+                        .padding(.bottom)
+                    
+                    // Iterate over the correctly sorted events
+                    ForEach(sortedEvents) { event in
+                        HStack(alignment: .firstTextBaseline) {
+                            Text("[\(TimeFormatter.format(event.timestamp))]")
+                                .font(.system(size: 14, weight: .bold, design: .monospaced))
+                                .foregroundColor(event.type.color)
+                            
+                            Text(event.message)
+                                .font(.system(size: 14, design: .monospaced))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .padding(.vertical, 2)
+                    }
                 }
                 .padding()
             }
@@ -49,135 +46,324 @@ struct SummaryView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Copy to Clipboard") {
+                        copySummary()
+                    }
                 }
             }
         }
     }
+    
+    private func copySummary() {
+        // Use the sorted events for the clipboard text as well
+        let summaryText = """
+        eResus Event Summary
+        Total Arrest Time: \(TimeFormatter.format(totalTime))
+        
+        --- Event Log ---
+        \(sortedEvents.map { "[\(TimeFormatter.format($0.timestamp))] \($0.message)" }.joined(separator: "\n"))
+        """
+        UIPasteboard.general.string = summaryText
+        HapticManager.shared.impact(style: .medium)
+    }
 }
 
-// MARK: - Reset Modal
 struct ResetModalView: View {
     @Binding var isPresented: Bool
     let onCopyAndReset: () -> Void
     let onResetAnyway: () -> Void
     
-    @State private var copied = false
-
     var body: some View {
-        VStack(spacing: 15) {
-            Text("Reset Arrest Log?").font(.title2.bold())
-            Text("This action cannot be undone. The current log will be saved automatically before resetting.")
-                .font(.subheadline)
+        VStack(spacing: 16) {
+            Image(systemName: "arrow.clockwise.circle.fill")
+                .font(.system(size: 50))
+                .foregroundColor(.red)
+            
+            Text("Reset Arrest Log?")
+                .font(.title).bold()
+            
+            Text("This will save the current log. This action cannot be undone.")
+                .font(.body)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
-                .padding(.bottom)
+                .padding(.horizontal)
             
-            ActionButton(title: copied ? "Copied!" : "Copy Log & Reset", icon: "doc.on.doc.fill", color: .blue, disabled: copied) {
-                onCopyAndReset()
-                copied = true
-                // Give user feedback, then dismiss and reset
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                    isPresented = false
-                }
+            Button(action: { onCopyAndReset(); isPresented = false }) {
+                Text("Copy, Save & Reset")
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity)
             }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
             
-            ActionButton(title: "Reset Anyway", icon: "trash.fill", color: .red.opacity(0.8)) {
-                onResetAnyway()
+            Button(action: { onResetAnyway(); isPresented = false }) {
+                Text("Reset & Save")
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .tint(.red)
+            .controlSize(.large)
+            
+            Button("Cancel") {
                 isPresented = false
             }
+            .padding(.top)
             
-            Button("Cancel") { isPresented = false }.padding(.top)
         }
         .padding()
+        .presentationDetents([.height(380)])
     }
 }
 
-// MARK: - Hypothermia Modal
-struct HypothermiaModalView: View {
+
+struct HypothermiaModal: View {
     @Binding var isPresented: Bool
     let onConfirm: (HypothermiaStatus) -> Void
     
     var body: some View {
-        VStack(spacing: 15) {
-            Text("Set Hypothermia Status").font(.title2.bold())
-                .padding(.bottom)
+        VStack(spacing: 16) {
+            Text("Set Hypothermia Status")
+                .font(.title2).bold()
             
-            ActionButton(title: "Severe (< 30°C)", icon: "thermometer.snowflake", color: .blue) {
-                onConfirm(.severe); isPresented = false
-            }
-            ActionButton(title: "Moderate (30-35°C)", icon: "thermometer.low", color: .yellow) {
-                onConfirm(.moderate); isPresented = false
-            }
-            ActionButton(title: "Clear / Normothermic", icon: "checkmark.circle", color: .green) {
-                onConfirm(.normothermic); isPresented = false
-            }
+            Text("Select the patient's temperature range to apply the correct guidelines.")
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
             
-            Button("Cancel") { isPresented = false }.padding(.top)
+            Button { onConfirm(.severe); isPresented = false } label: {
+                Text("Severe (< 30°C)")
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity)
+            }
+            .tint(.blue)
+            
+            Button { onConfirm(.moderate); isPresented = false } label: {
+                Text("Moderate (30-35°C)")
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity)
+            }
+            .tint(.orange)
+
+            Button { onConfirm(.normothermic); isPresented = false } label: {
+                Text("Clear / Normothermic")
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity)
+            }
+            .tint(.green)
+            
+            Button("Cancel") {
+                isPresented = false
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .padding(.top)
         }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
         .padding()
+        .presentationDetents([.height(420)])
     }
 }
 
-// MARK: - Other Drugs Modal
-struct OtherDrugsModalView: View {
+
+struct OtherDrugsModal: View {
     @Binding var isPresented: Bool
-    let onSelect: (String) -> Void
+    let onSelectDrug: (String) -> Void
     
     var body: some View {
         NavigationView {
-            List(AppConstants.otherMedications, id: \.self) { drug in
-                Button(action: {
-                    HapticManager.shared.impact(.light)
-                    onSelect(drug)
+            List(AppConstants.otherDrugs, id: \.self) { drug in
+                Button(drug) {
+                    onSelectDrug(drug)
                     isPresented = false
-                }) {
-                    Text(drug).foregroundColor(.primary)
                 }
+                .foregroundColor(.primary)
             }
             .navigationTitle("Log Other Medication")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { isPresented = false }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        isPresented = false
+                    }
                 }
             }
         }
     }
 }
 
-// MARK: - ETCO2 Input Modal
 struct Etco2ModalView: View {
     @Binding var isPresented: Bool
     let onConfirm: (String) -> Void
     
     @State private var value: String = ""
     @FocusState private var isFocused: Bool
-
+    
     var body: some View {
-        VStack(spacing: 20) {
-            Text("Log ETCO2 Value").font(.title2.bold())
-            Text("Enter the current end-tidal CO2 reading in mmHg.").foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-
+        VStack(spacing: 16) {
+            Text("Log ETCO2 Value")
+                .font(.title2).bold()
+            
+            Text("Enter the current end-tidal CO2 reading in mmHg.")
+                .foregroundColor(.secondary)
+            
             TextField("e.g., 35", text: $value)
                 .keyboardType(.numberPad)
-                .font(.system(size: 40, weight: .bold, design: .monospaced))
+                .font(.title)
                 .padding()
-                .background(Color.secondary.opacity(0.2))
+                .background(Color(UIColor.secondarySystemBackground))
                 .cornerRadius(12)
                 .multilineTextAlignment(.center)
                 .focused($isFocused)
-
-            ActionButton(title: "Log Value", icon: "checkmark", color: .teal) {
-                onConfirm(value)
-                isPresented = false
-            }
             
-            Button("Cancel") { isPresented = false }.padding(.top)
+            Button(action: confirm) {
+                Text("Log Value")
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(value.isEmpty)
         }
         .padding()
         .onAppear {
             isFocused = true
         }
+        .presentationDetents([.height(250)])
     }
+    
+    private func confirm() {
+        onConfirm(value)
+        isPresented = false
+    }
+}
+
+// MARK: - Dosage Modals
+
+struct DosageEntryModal: View {
+    let drug: DrugToLog
+    let amiodaroneDoseCount: Int
+    let onConfirm: (String, PatientAgeCategory?) -> Void
+    
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationView {
+            Group {
+                switch drug {
+                case .adrenaline:
+                    AgeBasedDosageView(
+                        drugName: "Adrenaline",
+                        calculatedDose: DosageCalculator.calculateAdrenalineDose(for: age)
+                    )
+                case .amiodarone:
+                    AgeBasedDosageView(
+                        drugName: "Amiodarone",
+                        calculatedDose: DosageCalculator.calculateAmiodaroneDose(for: age, doseNumber: amiodaroneDoseCount + 1)
+                    )
+                case .lidocaine, .other:
+                    ManualDosageView(drugName: drug.title)
+                }
+            }
+            .navigationTitle("Log \(drug.title)")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+    
+    @State private var age: PatientAgeCategory = .adult
+
+    private func confirm(dosage: String, age: PatientAgeCategory?) {
+        onConfirm(dosage, age)
+        dismiss()
+    }
+    
+    // View for Adrenaline and Amiodarone
+    @ViewBuilder
+    private func AgeBasedDosageView(drugName: String, calculatedDose: String?) -> some View {
+        Form {
+            Section(header: Text("Patient Age")) {
+                Picker("Age Category", selection: $age) {
+                    ForEach(PatientAgeCategory.allCases) { category in
+                        Text(category.rawValue).tag(category)
+                    }
+                }
+            }
+            
+            Section(header: Text("Calculated Dose")) {
+                if let dose = calculatedDose {
+                    VStack(alignment: .center, spacing: 12) {
+                        Text(dose)
+                            .font(.title2.bold())
+                            .frame(maxWidth: .infinity, alignment: .center)
+
+                        Button(action: { confirm(dosage: dose, age: self.age) }) {
+                            Text("Log Calculated Dose")
+                                .fontWeight(.semibold)
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                    }
+                    .padding(.vertical, 8)
+                } else {
+                    Text("N/A for this age group.")
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            ManualDosageSection { manualDose in
+                confirm(dosage: manualDose, age: self.age)
+            }
+        }
+    }
+    
+    // View for Lidocaine and Other Drugs
+    @ViewBuilder
+    private func ManualDosageView(drugName: String) -> some View {
+        Form {
+            ManualDosageSection { manualDose in
+                confirm(dosage: manualDose, age: nil)
+            }
+        }
+    }
+
+    // Reusable Manual Entry Section
+    @ViewBuilder
+    private func ManualDosageSection(onConfirm: @escaping (String) -> Void) -> some View {
+        Section(header: Text("Manual Override")) {
+            HStack {
+                TextField("Amount", text: $manualAmount)
+                    .keyboardType(.decimalPad)
+                    .textFieldStyle(.roundedBorder)
+                Picker("Unit", selection: $manualUnit) {
+                    ForEach(["mg", "mcg", "g", "ml"], id: \.self) {
+                        Text($0)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+
+            Button(action: { onConfirm("\(manualAmount)\(manualUnit)") }) {
+                Text("Log Manual Dose")
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(manualAmount.isEmpty)
+        }
+    }
+
+    @State private var manualAmount: String = ""
+    @State private var manualUnit: String = "mg"
 }

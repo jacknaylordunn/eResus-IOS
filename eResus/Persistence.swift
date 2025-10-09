@@ -8,20 +8,25 @@
 import Foundation
 import SwiftData
 
-// Actor to ensure thread-safe access to the data container.
 @MainActor
 let sharedModelContainer: ModelContainer = {
-    // Define the schema for our database. We are telling it to store `SavedArrestLog` objects.
+    // Defines the schema for the database, including all models to be stored.
     let schema = Schema([
         SavedArrestLog.self,
+        Event.self,
     ])
+    
+    // Configures how the data is stored.
     let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
     do {
-        // Create the database container.
+        // Attempts to create the database container.
         return try ModelContainer(for: schema, configurations: [modelConfiguration])
     } catch {
-        // If the database can't be created, something is seriously wrong.
+        // If creation fails, the app will crash with a detailed error.
+        // This usually happens after a model change and can be fixed by deleting the app from the simulator.
         fatalError("Could not create ModelContainer: \(error)")
     }
 }()
+
+

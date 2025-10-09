@@ -8,7 +8,7 @@
 import SwiftUI
 import PDFKit
 
-// This view is a wrapper around PDFKit's PDFView to make it usable in SwiftUI.
+// A SwiftUI view that wraps UIKit's PDFView
 struct PDFKitView: UIViewRepresentable {
     let pdfName: String
 
@@ -16,37 +16,26 @@ struct PDFKitView: UIViewRepresentable {
         let pdfView = PDFView()
         pdfView.autoScales = true
         
-        // Load the PDF from the app's main bundle.
-        if let url = Bundle.main.url(forResource: pdfName, withExtension: "pdf") {
-            pdfView.document = PDFDocument(url: url)
+        // Load the PDF from the app's main bundle
+        guard let url = Bundle.main.url(forResource: pdfName, withExtension: "pdf") else {
+            // This will now display an error message directly in the view if the PDF isn't found
+            // This is most likely due to the "Target Membership" issue.
+            let errorLabel = UILabel()
+            errorLabel.text = "Error: PDF file '\(pdfName).pdf' not found. Please check Target Membership in Xcode."
+            errorLabel.textAlignment = .center
+            errorLabel.numberOfLines = 0
+            pdfView.addSubview(errorLabel)
+            errorLabel.frame = pdfView.bounds
+            errorLabel.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            return pdfView
         }
         
+        pdfView.document = PDFDocument(url: url)
         return pdfView
     }
 
     func updateUIView(_ uiView: PDFView, context: Context) {
-        // We don't need to update the view in this case.
+        // No update logic needed for this static view
     }
 }
 
-// A simple view to host the PDF viewer within a sheet.
-struct PDFViewer: View {
-    let pdfName: String
-    let title: String
-    @Environment(\.dismiss) var dismiss
-
-    var body: some View {
-        NavigationView {
-            PDFKitView(pdfName: pdfName)
-                .navigationTitle(title)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        Button("Done") {
-                            dismiss()
-                        }
-                    }
-                }
-        }
-    }
-}

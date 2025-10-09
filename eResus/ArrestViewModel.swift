@@ -6,362 +6,397 @@
 //
 
 import Foundation
-import Combine
-import SwiftData
 import SwiftUI
+import SwiftData
 
 @MainActor
 class ArrestViewModel: ObservableObject {
     private var modelContext: ModelContext
     
+    // MARK: - Published State Properties
+    @Published var arrestState: ArrestState = .pending
+    @Published var masterTime: TimeInterval = 0
+    @Published var cprTime: TimeInterval = AppSettings.cprCycleDuration
+    @Published var timeOffset: TimeInterval = 0
+    @Published var uiState: UIState = .default
+    @Published var events: [Event] = []
+
+    @Published var shockCount = 0
+    @Published var adrenalineCount = 0
+    @Published var amiodaroneCount = 0
+    @Published var lidocaineCount = 0
+    
+    @Published var airwayPlaced = false
+    @Published var antiarrhythmicGiven: AntiarrhythmicDrug = .none
+    
+    @Published var reversibleCauses: [ChecklistItem] = AppConstants.reversibleCausesTemplate
+    @Published var postROSCTasks: [ChecklistItem] = AppConstants.postROSCTasksTemplate
+    @Published var postMortemTasks: [ChecklistItem] = AppConstants.postMortemTasksTemplate
+    @Published var patientAgeCategory: PatientAgeCategory?
+    
+    // MARK: - Private State Properties
+    private var timer: Timer?
+    private var startTime: Date?
+    private var cprCycleStartTime: TimeInterval = 0
+    private var lastAdrenalineTime: TimeInterval?
+    private var shockCountForAmiodarone1: Int?
+    private var undoHistory: [UndoState] = []
+
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
     }
 
-    // MARK: - Published State Properties
-    @Published var arrestState: ArrestState = .pending
-    @Published var uiState: UIState = .default
-    @Published var masterTime: TimeInterval = 0
-    @Published var timeOffset: TimeInterval = 0
-    @Published var cprTimeRemaining: TimeInterval = AppSettings.cprCycleDuration
-    @Published var events: [Event] = []
-
-    @Published var shockCount: Int = 0
-    @Published var adrenalineCount: Int = 0
-    @Published var amiodaroneCount: Int = 0
-    @Published var lidocaineCount: Int = 0
-    @Published var airwayPlaced: Bool = false
-    
-    @Published var shockCountOnAmiodarone1: Int? = nil
-
-    @Published var reversibleCauses: [ChecklistItem] = AppConstants.reversibleCauses
-    @Published var postROSCTasks: [ChecklistItem] = AppConstants.postROSCTasks
-    @Published var postMortemTasks: [ChecklistItem] = AppConstants.postMortemTasks
-
-    @Published var isShowingSummary = false
-    @Published var isShowingResetModal = false
-    @Published var isShowingEtco2Input = false
-    @Published var isShowingHypothermiaInput = false
-    @Published var isShowingOtherDrugs = false
-    @Published var isMetronomeOn = false
-    
-    // For local PDF viewing
-    @Published var selectedPDF: (name: String, title: String)? = nil
-    var isShowingPDF: Binding<Bool> {
-        Binding(
-            get: { self.selectedPDF != nil },
-            set: { if !$0 { self.selectedPDF = nil } }
-        )
-    }
-
-    // MARK: - Private Properties
-    private var timer: AnyCancellable?
-    private var startTime: Date?
-    private var cprCycleStartTime: TimeInterval = 0
-    var lastAdrenalineTime: TimeInterval?
-    private var undoHistory: [UndoState] = []
-    private let metronome = Metronome()
-    
-    // MARK: - Computed Properties
-    var totalElapsedTime: TimeInterval { masterTime + timeOffset }
-
-    var isAdrenalineDue: Bool {
-        guard let lastAdrenalineTime = lastAdrenalineTime else { return false }
-        return (totalElapsedTime - lastAdrenalineTime) >= currentAdrenalineInterval
-    }
-    
-    var timeToNextAdrenaline: TimeInterval {
-        guard let lastAdrenalineTime = lastAdrenalineTime else { return 0 }
-        let timeRemaining = currentAdrenalineInterval - (totalElapsedTime - lastAdrenalineTime)
-        return max(0, timeRemaining)
-    }
-    
-    var hypothermiaStatus: HypothermiaStatus {
-        reversibleCauses.first(where: { $0.name == "Hypothermia" })?.hypothermiaStatus ?? .none
-    }
-    
-    var isAmiodaroneEnabled: Bool { shockCount >= 3 && amiodaroneCount < 2 && lidocaineCount == 0 && hypothermiaStatus != .severe }
-    var isLidocaineEnabled: Bool { shockCount >= 3 && lidocaineCount < 2 && amiodaroneCount == 0 }
-    var isAdrenalineEnabled: Bool { hypothermiaStatus != .severe }
-    
-    var showAmiodaroneDose2Reminder: Bool {
-        guard let shockCountOnAmiodarone1 = shockCountOnAmiodarone1 else { return false }
-        return amiodaroneCount == 1 && shockCount >= shockCountOnAmiodarone1 + 2
-    }
-    
-    private var currentAdrenalineInterval: TimeInterval {
-        hypothermiaStatus == .moderate ? AppSettings.hypothermicAdrenalineInterval : AppSettings.adrenalineInterval
-    }
-    
+    // MARK: - Computed Properties for UI Logic
+    var totalArrestTime: TimeInterval { masterTime + timeOffset }
     var canUndo: Bool { !undoHistory.isEmpty }
 
-    // MARK: - Core Logic
-    func addTimeOffset(_ offset: TimeInterval) {
-        saveStateForUndo()
-        timeOffset += offset
-        logEvent("Time offset added: +\(Int(offset / 60)) min", type: .status)
+    var isAdrenalineAvailable: Bool {
+        reversibleCauses.first(where: { $0.name == "Hypothermia" })?.hypothermiaStatus != .severe
     }
 
-    func startArrest() {
-        saveStateForUndo()
-        startTime = Date()
-        masterTime = 0 // Fix: Start master time at exactly 0
-        arrestState = .active
-        cprCycleStartTime = timeOffset
-        cprTimeRemaining = AppSettings.cprCycleDuration
-        logEvent("Arrest Started at \(Date().formatted(date: .omitted, time: .standard))", type: .status)
+    var isAmiodaroneAvailable: Bool {
+        let isEligibleShockCount = (shockCount >= 3 && amiodaroneCount == 0) || (shockCount >= 5 && amiodaroneCount == 1)
+        return isEligibleShockCount && antiarrhythmicGiven != .lidocaine && isAdrenalineAvailable
+    }
+
+    var isLidocaineAvailable: Bool {
+        let isEligibleShockCount = (shockCount >= 3 && lidocaineCount == 0) || (shockCount >= 5 && lidocaineCount == 1)
+        return isEligibleShockCount && antiarrhythmicGiven != .amiodarone
+    }
+    
+    var timeUntilAdrenaline: TimeInterval? {
+        guard let lastAdrenalineTime = lastAdrenalineTime else { return nil }
+        let hypothermiaStatus = reversibleCauses.first { $0.name == "Hypothermia" }?.hypothermiaStatus
+        let interval = hypothermiaStatus == .moderate ? AppSettings.adrenalineInterval * 2 : AppSettings.adrenalineInterval
+        let timeSince = totalArrestTime - lastAdrenalineTime
+        return interval - timeSince
+    }
+
+    var shouldShowAmiodaroneReminder: Bool {
+        guard let shockCountDose1 = shockCountForAmiodarone1 else { return false }
+        return amiodaroneCount == 1 && shockCount >= shockCountDose1 + 2
+    }
+    
+    var shouldShowAmiodaroneFirstDosePrompt: Bool {
+        return isAmiodaroneAvailable && amiodaroneCount == 0
+    }
+    
+    var shouldShowAdrenalinePrompt: Bool {
+        // Prompt after 3rd shock if no adrenaline given yet.
+        return shockCount >= 3 && adrenalineCount == 0 && isAdrenalineAvailable
+    }
+    
+    // MARK: - Core Timer Logic
+    private func startTimer() {
+        stopTimer()
+        cprCycleStartTime = totalArrestTime
         
-        startTimerIfNeeded()
-        HapticManager.shared.trigger(.success)
+        // Schedule timer on common run loop to prevent pausing during UI interaction
+        let newTimer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.tick()
+        }
+        RunLoop.main.add(newTimer, forMode: .common)
+        self.timer = newTimer
+    }
+
+    func stopTimer() {
+        timer?.invalidate()
+        timer = nil
     }
 
     private func tick() {
-        guard let startTime = startTime, arrestState == .active || arrestState == .rosc else { return }
+        guard let startTime = startTime else { return }
         
-        masterTime = Date().timeIntervalSince(startTime)
-        
-        if arrestState == .active {
-            let timeSinceCycleStart = totalElapsedTime - cprCycleStartTime
-            cprTimeRemaining = AppSettings.cprCycleDuration - timeSinceCycleStart
+        Task { @MainActor in
+            self.masterTime = Date().timeIntervalSince(startTime)
             
-            if cprTimeRemaining > 0 && cprTimeRemaining <= 10 { HapticManager.shared.impact(.light) }
-            if cprTimeRemaining < 0 { startNewCPRCycle() }
-            if isAdrenalineDue { HapticManager.shared.trigger(.warning) }
+            // Only update CPR time if arrest is active and we are not analyzing/shocking
+            if self.arrestState == .active && self.uiState == .default {
+                let oldCprTime = self.cprTime
+                self.cprTime = AppSettings.cprCycleDuration - (self.totalArrestTime - self.cprCycleStartTime)
+
+                // Haptic for last 10 seconds
+                if self.cprTime <= 10 && self.cprTime > 0 {
+                    HapticManager.shared.impact(style: .light)
+                }
+                
+                // Haptic for cycle end
+                if oldCprTime > 0 && self.cprTime <= 0 {
+                    HapticManager.shared.notification(type: .warning)
+                }
+                
+                if self.cprTime < -0.9 { // Add tolerance for timer drift
+                    self.cprCycleStartTime = self.totalArrestTime
+                    self.cprTime = AppSettings.cprCycleDuration
+                    // "CPR Cycle Complete" log removed as requested
+                }
+            }
         }
     }
-    
-    func startRhythmAnalysis() {
-        saveStateForUndo()
-        uiState = .analyzing
-        logEvent("Rhythm Analysis Paused", type: .analysis)
+
+    // MARK: - User Actions
+    func startArrest() {
+        saveUndoState()
+        startTime = Date()
+        arrestState = .active
+        logEvent("Arrest Started at \(Date().formatted(date: .omitted, time: .standard))", type: .status)
+        startTimer()
     }
     
-    func logRhythm(type: String, isShockable: Bool) {
-        saveStateForUndo()
-        logEvent("Rhythm is \(type)", type: .rhythm)
-        uiState = isShockable ? .shockAdvised : .default
-        if !isShockable { startNewCPRCycle() }
+    func analyseRhythm() {
+        saveUndoState()
+        uiState = .analyzing
+        logEvent("Rhythm analysis. Pausing CPR.", type: .analysis)
+    }
+    
+    func logRhythm(_ rhythm: String, isShockable: Bool) {
+        saveUndoState()
+        logEvent("Rhythm is \(rhythm)", type: .rhythm)
+        if isShockable {
+            uiState = .shockAdvised
+        } else {
+            resumeCPR()
+        }
     }
     
     func deliverShock() {
-        saveStateForUndo()
+        saveUndoState()
         shockCount += 1
-        logEvent("Shock \(shockCount) Delivered. Resuming CPR.", type: .shock)
+        logEvent("Shock \(shockCount) Delivered", type: .shock)
+        resumeCPR()
+    }
+    
+    private func resumeCPR() {
         uiState = .default
-        startNewCPRCycle()
-        HapticManager.shared.trigger(.success)
+        cprCycleStartTime = totalArrestTime
+        cprTime = AppSettings.cprCycleDuration
+        logEvent("Resuming CPR.", type: .cpr)
     }
 
-    func logAdrenaline() {
-        saveStateForUndo()
+    func logAdrenaline(with dosage: String? = nil) {
+        saveUndoState()
         adrenalineCount += 1
-        lastAdrenalineTime = totalElapsedTime
-        logEvent("Adrenaline (1mg) Given - Dose \(adrenalineCount)", type: .drug)
+        lastAdrenalineTime = totalArrestTime
+        let dosageText = (AppSettings.showDosagePrompts && dosage != nil) ? " (\(dosage!))" : ""
+        logEvent("Adrenaline\(dosageText) Given - Dose \(adrenalineCount)", type: .drug)
     }
-
-    func logAmiodarone() {
-        saveStateForUndo()
+    
+    func logAmiodarone(with dosage: String? = nil) {
+        saveUndoState()
         amiodaroneCount += 1
+        antiarrhythmicGiven = .amiodarone
         if amiodaroneCount == 1 {
-            shockCountOnAmiodarone1 = shockCount
-            logEvent("Amiodarone (300mg) Given - Dose 1", type: .drug)
-        } else {
-            logEvent("Amiodarone (150mg) Given - Dose 2", type: .drug)
+            shockCountForAmiodarone1 = shockCount
         }
+        let dosageText = (AppSettings.showDosagePrompts && dosage != nil) ? " (\(dosage!))" : ""
+        logEvent("Amiodarone\(dosageText) Given - Dose \(amiodaroneCount)", type: .drug)
     }
     
-    func logLidocaine() {
-        saveStateForUndo()
+    func logLidocaine(with dosage: String? = nil) {
+        saveUndoState()
         lidocaineCount += 1
-        logEvent("Lidocaine Given - Dose \(lidocaineCount)", type: .drug)
+        antiarrhythmicGiven = .lidocaine
+        let dosageText = (AppSettings.showDosagePrompts && dosage != nil) ? " (\(dosage!))" : ""
+        logEvent("Lidocaine\(dosageText) Given - Dose \(lidocaineCount)", type: .drug)
     }
     
-    func logOtherDrug(_ drug: String) {
-        saveStateForUndo()
-        logEvent("\(drug) Given", type: .drug)
+    func logOtherDrug(_ drug: String, with dosage: String? = nil) {
+        saveUndoState()
+        let dosageText = (AppSettings.showDosagePrompts && dosage != nil) ? " (\(dosage!))" : ""
+        logEvent("\(drug)\(dosageText) Given", type: .drug)
     }
     
-    func logAirway() {
-        saveStateForUndo()
+    func setPatientAgeCategory(_ ageCategory: PatientAgeCategory?) {
+        self.patientAgeCategory = ageCategory
+    }
+    
+    func logAirwayPlaced() {
+        saveUndoState()
         airwayPlaced = true
         logEvent("Advanced Airway Placed", type: .airway)
     }
     
-    func logEtco2(value: String) {
-        guard !value.isEmpty, let numValue = Int(value) else { return }
-        saveStateForUndo()
-        logEvent("ETCO2: \(numValue) mmHg", type: .etco2)
+    func logEtco2(_ value: String) {
+        saveUndoState()
+        if let number = Int(value), number > 0 {
+            logEvent("ETCO2: \(number) mmHg", type: .etco2)
+        }
     }
-
+    
     func achieveROSC() {
-        saveStateForUndo()
+        saveUndoState()
         arrestState = .rosc
+        uiState = .default
         logEvent("Return of Spontaneous Circulation (ROSC)", type: .status)
-        HapticManager.shared.trigger(.success)
+    }
+    
+    func endArrest() {
+        saveUndoState()
+        arrestState = .ended
+        stopTimer()
+        logEvent("Arrest Ended (Patient Deceased)", type: .status)
     }
     
     func reArrest() {
-        saveStateForUndo()
+        saveUndoState()
         arrestState = .active
-        startNewCPRCycle()
+        cprCycleStartTime = totalArrestTime
+        cprTime = AppSettings.cprCycleDuration
         logEvent("Patient Re-Arrested. CPR Resumed.", type: .status)
     }
 
-    func endArrest() {
-        saveStateForUndo()
-        arrestState = .ended
-        timer?.cancel()
-        logEvent("Arrest Ended (Patient Deceased)", type: .status)
+    func addTimeOffset(_ seconds: TimeInterval) {
+        saveUndoState()
+        timeOffset += seconds
+        logEvent("Time offset added: +\(Int(seconds / 60)) min", type: .status)
+    }
+    
+    func toggleChecklistItemCompletion(for item: Binding<ChecklistItem>) {
+        saveUndoState()
+        item.wrappedValue.isCompleted.toggle()
+        let status = item.wrappedValue.isCompleted ? "checked" : "unchecked"
+        logEvent("\(item.wrappedValue.name) \(status)", type: .cause)
+    }
+
+    func setHypothermiaStatus(_ status: HypothermiaStatus) {
+        saveUndoState()
+        if let index = reversibleCauses.firstIndex(where: { $0.name == "Hypothermia" }) {
+            reversibleCauses[index].hypothermiaStatus = status
+            reversibleCauses[index].isCompleted = (status != .none)
+            logEvent("Hypothermia status set to: \(status.rawValue)", type: .cause)
+        }
+    }
+    
+    // MARK: - Undo & Reset Logic
+    private func saveUndoState() {
+        do {
+            let eventsData = try JSONEncoder().encode(events.map { EventCodable(from: $0) })
+            
+            let currentState = UndoState(
+                arrestState: arrestState, masterTime: masterTime, cprTime: cprTime, timeOffset: timeOffset,
+                eventsData: eventsData, shockCount: shockCount, adrenalineCount: adrenalineCount,
+                amiodaroneCount: amiodaroneCount, lidocaineCount: lidocaineCount,
+                lastAdrenalineTime: lastAdrenalineTime, antiarrhythmicGiven: antiarrhythmicGiven,
+                shockCountForAmiodarone1: shockCountForAmiodarone1, airwayPlaced: airwayPlaced,
+                reversibleCauses: reversibleCauses, postROSCTasks: postROSCTasks,
+                postMortemTasks: postMortemTasks, startTime: startTime, uiState: uiState,
+                patientAgeCategory: patientAgeCategory
+            )
+            undoHistory.append(currentState)
+        } catch {
+            print("Failed to save undo state: \(error)")
+        }
+    }
+    
+    func undo() {
+        guard let lastState = undoHistory.popLast() else { return }
+        
+        do {
+            let decodedEvents = try JSONDecoder().decode([EventCodable].self, from: lastState.eventsData)
+            events = decodedEvents.map { $0.toEvent() }
+            
+            arrestState = lastState.arrestState
+            masterTime = lastState.masterTime
+            cprTime = lastState.cprTime
+            timeOffset = lastState.timeOffset
+            shockCount = lastState.shockCount
+            adrenalineCount = lastState.adrenalineCount
+            amiodaroneCount = lastState.amiodaroneCount
+            lidocaineCount = lastState.lidocaineCount
+            lastAdrenalineTime = lastState.lastAdrenalineTime
+            antiarrhythmicGiven = lastState.antiarrhythmicGiven
+            shockCountForAmiodarone1 = lastState.shockCountForAmiodarone1
+            airwayPlaced = lastState.airwayPlaced
+            reversibleCauses = lastState.reversibleCauses
+            postROSCTasks = lastState.postROSCTasks
+            postMortemTasks = lastState.postMortemTasks
+            startTime = lastState.startTime
+            uiState = lastState.uiState
+            patientAgeCategory = lastState.patientAgeCategory
+            
+            if (arrestState == .active || arrestState == .rosc) && timer == nil {
+                startTimer()
+            } else if arrestState == .pending || arrestState == .ended {
+                stopTimer()
+            }
+        } catch {
+            print("Failed to restore undo state: \(error)")
+        }
     }
 
     func performReset(shouldSaveLog: Bool, shouldCopy: Bool) {
+        if shouldSaveLog && startTime != nil {
+            saveLogToDatabase()
+        }
         if shouldCopy {
             copySummaryToClipboard()
         }
         
-        if shouldSaveLog {
-            let outcome: String
-            switch arrestState {
-            case .rosc: outcome = "ROSC"
-            case .ended: outcome = "Deceased"
-            default: outcome = "Incomplete"
-            }
-            saveLog(outcome: outcome)
-        }
-        
+        stopTimer()
         arrestState = .pending
-        uiState = .default
         masterTime = 0
+        cprTime = AppSettings.cprCycleDuration
         timeOffset = 0
-        cprTimeRemaining = AppSettings.cprCycleDuration
+        uiState = .default
         events = []
         shockCount = 0
         adrenalineCount = 0
         amiodaroneCount = 0
         lidocaineCount = 0
         airwayPlaced = false
-        shockCountOnAmiodarone1 = nil
-        reversibleCauses = AppConstants.reversibleCauses
-        postROSCTasks = AppConstants.postROSCTasks
-        postMortemTasks = AppConstants.postMortemTasks
-        timer?.cancel()
-        startTime = nil
+        antiarrhythmicGiven = .none
         lastAdrenalineTime = nil
-        undoHistory.removeAll()
-        if isMetronomeOn { toggleMetronome() }
-        HapticManager.shared.trigger(.warning)
-    }
-
-    func setHypothermiaStatus(_ status: HypothermiaStatus) {
-        saveStateForUndo()
-        if let index = reversibleCauses.firstIndex(where: { $0.name == "Hypothermia" }) {
-            reversibleCauses[index].hypothermiaStatus = status
-            reversibleCauses[index].isCompleted = (status != .none)
-            let message: String
-            switch status {
-            case .severe: message = "Hypothermia status set to: Severe (< 30°C)"
-            case .moderate: message = "Hypothermia status set to: Moderate (30-35°C)"
-            case .normothermic: message = "Hypothermia status cleared (Normothermic)"
-            case .none: message = "Hypothermia status cleared"
-            }
-            logEvent(message, type: .cause)
-        }
+        shockCountForAmiodarone1 = nil
+        startTime = nil
+        undoHistory = []
+        patientAgeCategory = nil
+        reversibleCauses = AppConstants.reversibleCausesTemplate
+        postROSCTasks = AppConstants.postROSCTasksTemplate
+        postMortemTasks = AppConstants.postMortemTasksTemplate
     }
     
-    func toggleMetronome() {
-        isMetronomeOn.toggle()
-        isMetronomeOn ? metronome.start() : metronome.stop()
-    }
-    
-    func toggleChecklistItem(id: UUID, list: Binding<[ChecklistItem]>) {
-        saveStateForUndo()
-        if let index = list.wrappedValue.firstIndex(where: { $0.id == id }) {
-            list.wrappedValue[index].isCompleted.toggle()
-        }
-    }
-
-    func undo() {
-        guard let previousState = undoHistory.popLast() else { return }
+    private func saveLogToDatabase() {
+        guard let startTime = startTime else { return }
         
-        let oldState = self.arrestState
-        
-        self.arrestState = previousState.arrestState
-        self.uiState = previousState.uiState
-        self.events = previousState.events
-        self.shockCount = previousState.shockCount
-        self.adrenalineCount = previousState.adrenalineCount
-        self.amiodaroneCount = previousState.amiodaroneCount
-        self.lidocaineCount = previousState.lidocaineCount
-        self.airwayPlaced = previousState.airwayPlaced
-        self.reversibleCauses = previousState.reversibleCauses
-        self.postROSCTasks = previousState.postROSCTasks
-        self.postMortemTasks = previousState.postMortemTasks
-        self.timeOffset = previousState.timeOffset
-        self.shockCountOnAmiodarone1 = previousState.shockCountOnAmiodarone1
-        self.lastAdrenalineTime = previousState.lastAdrenalineTime
-        self.masterTime = previousState.masterTime
-        self.startTime = previousState.startTime
-        self.cprCycleStartTime = previousState.cprCycleStartTime
-        
-        if (oldState == .ended || oldState == .rosc) && (self.arrestState == .active || self.arrestState == .rosc) {
-            startTimerIfNeeded()
+        let finalOutcome: String
+        switch arrestState {
+        case .rosc: finalOutcome = "ROSC"
+        case .ended: finalOutcome = "Deceased"
+        default: finalOutcome = "Incomplete"
         }
-    }
-    
-    func copySummaryToClipboard() {
-        var text = "eResus Event Summary\n"
-        if !events.isEmpty {
-            text += "Total Arrest Time: \(formatTime(totalElapsedTime))\n\n"
-        }
-        text += "--- Event Log ---\n"
-        text += events.reversed().map { event in
-            "[\(formatTime(event.timestamp))] \(event.message)"
-        }.joined(separator: "\n")
         
-        UIPasteboard.general.string = text
-    }
-    
-    private func saveStateForUndo() {
-        let currentState = UndoState(
-            arrestState: self.arrestState, uiState: self.uiState, events: self.events,
-            shockCount: self.shockCount, adrenalineCount: self.adrenalineCount,
-            amiodaroneCount: self.amiodaroneCount, lidocaineCount: self.lidocaineCount,
-            airwayPlaced: self.airwayPlaced, reversibleCauses: self.reversibleCauses,
-            postROSCTasks: self.postROSCTasks, postMortemTasks: self.postMortemTasks,
-            timeOffset: self.timeOffset, shockCountOnAmiodarone1: self.shockCountOnAmiodarone1,
-            lastAdrenalineTime: self.lastAdrenalineTime, masterTime: self.masterTime,
-            startTime: self.startTime, cprCycleStartTime: self.cprCycleStartTime
-        )
-        undoHistory.append(currentState)
-    }
-    
-    private func startTimerIfNeeded() {
-        timer?.cancel()
-        timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect().sink { [weak self] _ in self?.tick() }
-    }
-    
-    private func startNewCPRCycle() {
-        cprCycleStartTime = totalElapsedTime
-        cprTimeRemaining = AppSettings.cprCycleDuration
-        logEvent("New CPR Cycle Started", type: .cpr)
-        HapticManager.shared.trigger(.success)
-    }
-
-    private func logEvent(_ message: String, type: EventType) {
-        let newEvent = Event(timestamp: totalElapsedTime, message: message, type: type)
-        events.insert(newEvent, at: 0)
-    }
-    
-    private func saveLog(outcome: String) {
-        guard let startTime = startTime, !events.isEmpty else { return }
-        let log = SavedArrestLog(
+        let newLog = SavedArrestLog(
             startTime: startTime,
-            endTime: Date(),
-            totalDuration: totalElapsedTime,
-            outcome: outcome,
-            events: events
+            totalDuration: totalArrestTime,
+            finalOutcome: finalOutcome,
+            events: []
         )
-        modelContext.insert(log)
+        modelContext.insert(newLog)
+        
+        for event in events {
+            let newEvent = Event(timestamp: event.timestamp, message: event.message, type: event.type)
+            newEvent.log = newLog
+            modelContext.insert(newEvent)
+        }
+        
         try? modelContext.save()
+    }
+    
+    private func copySummaryToClipboard() {
+        let summaryText = """
+        eResus Event Summary
+        Total Arrest Time: \(TimeFormatter.format(totalArrestTime))
+        
+        --- Event Log ---
+        \(events.sorted(by: { $0.timestamp < $1.timestamp }).map { "[\(TimeFormatter.format($0.timestamp))] \($0.message)" }.joined(separator: "\n"))
+        """
+        UIPasteboard.general.string = summaryText
+        HapticManager.shared.notification(type: .success)
+    }
+    
+    private func logEvent(_ message: String, type: EventType) {
+        let newEvent = Event(timestamp: totalArrestTime, message: message, type: type)
+        events.insert(newEvent, at: 0)
+        HapticManager.shared.impact()
     }
 }

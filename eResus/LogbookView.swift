@@ -9,60 +9,42 @@ import SwiftUI
 import SwiftData
 
 struct LogbookView: View {
-    @Query(sort: \SavedArrestLog.startTime, order: .reverse) private var logs: [SavedArrestLog]
     @Environment(\.modelContext) private var modelContext
+    @Query(sort: \SavedArrestLog.startTime, order: .reverse) private var logs: [SavedArrestLog]
+    
     @State private var selectedLog: SavedArrestLog?
 
     var body: some View {
         NavigationView {
             List {
-                if logs.isEmpty {
-                    VStack(spacing: 20) {
-                        Image(systemName: "book.closed.fill")
-                            .font(.system(size: 60))
-                        Text("No Saved Logs")
-                            .font(.title2.bold())
-                        Text("Completed arrest logs will appear here for review.")
-                            .multilineTextAlignment(.center)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding()
-                    .frame(maxWidth: .infinity)
-                } else {
-                    ForEach(logs) { log in
-                        Button(action: { selectedLog = log }) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(log.startTime, style: .date)
-                                        .fontWeight(.bold)
-                                    Text(log.startTime, style: .time)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                                Spacer()
-                                VStack(alignment: .trailing, spacing: 4) {
-                                    Text(log.outcome)
-                                        .font(.headline)
-                                        .foregroundColor(log.outcome == "ROSC" ? .green : .gray)
-                                    Text("Duration: \(formatTime(log.totalDuration))")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
+                ForEach(logs) { log in
+                    Button(action: { selectedLog = log }) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(log.startTime, style: .date)
+                                .font(.headline)
+                            Text(log.startTime, style: .time)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Text("Duration: \(TimeFormatter.format(log.totalDuration)) | Outcome: \(log.finalOutcome)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.top, 2)
                         }
-                        .foregroundColor(.primary)
+                        .padding(.vertical, 4)
                     }
-                    .onDelete(perform: deleteLog)
+                    .foregroundColor(.primary)
                 }
+                .onDelete(perform: deleteLogs)
             }
             .navigationTitle("Logbook")
             .sheet(item: $selectedLog) { log in
-                SummaryView(events: log.events)
+                // The events need to be converted from a persistent array to a regular array for the view
+                SummaryView(events: Array(log.events), totalTime: log.totalDuration)
             }
         }
     }
-    
-    private func deleteLog(offsets: IndexSet) {
+
+    private func deleteLogs(offsets: IndexSet) {
         withAnimation {
             for index in offsets {
                 modelContext.delete(logs[index])

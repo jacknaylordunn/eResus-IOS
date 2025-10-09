@@ -6,13 +6,40 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXCopyFilesBuildPhase section */
+		6A2990852E85A9EB00F29C0D /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		6A18C8D72E7108D100EE002E /* eResus.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = eResus.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		6A2990702E85A9E800F29C0D /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		6AE4D6362E8613C2003E23F2 /* Exceptions for "eResus" folder in "eResus" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 6A18C8D62E7108D100EE002E /* eResus */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		6A18C8D92E7108D100EE002E /* eResus */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				6AE4D6362E8613C2003E23F2 /* Exceptions for "eResus" folder in "eResus" target */,
+			);
 			path = eResus;
 			sourceTree = "<group>";
 		};
@@ -33,6 +60,7 @@
 			isa = PBXGroup;
 			children = (
 				6A18C8D92E7108D100EE002E /* eResus */,
+				6A29906D2E85A9E800F29C0D /* Frameworks */,
 				6A18C8D82E7108D100EE002E /* Products */,
 			);
 			sourceTree = "<group>";
@@ -45,6 +73,14 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		6A29906D2E85A9E800F29C0D /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				6A2990702E85A9E800F29C0D /* SwiftUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -55,6 +91,7 @@
 				6A18C8D32E7108D100EE002E /* Sources */,
 				6A18C8D42E7108D100EE002E /* Frameworks */,
 				6A18C8D52E7108D100EE002E /* Resources */,
+				6A2990852E85A9EB00F29C0D /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
@@ -77,8 +114,8 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 1640;
-				LastUpgradeCheck = 1640;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2600;
 				TargetAttributes = {
 					6A18C8D62E7108D100EE002E = {
 						CreatedOnToolsVersion = 16.4;
@@ -184,6 +221,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -241,6 +279,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
 			};
@@ -251,11 +290,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = eResus/eResus.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 5RVB349QB8;
+				DEVELOPMENT_TEAM = KSRV6M97U5;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = eResus/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -266,7 +308,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = JND.eResus;
+				PRODUCT_BUNDLE_IDENTIFIER = co.uk.aegismedicalsolutions.eResus;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -279,11 +321,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = eResus/eResus.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 5RVB349QB8;
+				DEVELOPMENT_TEAM = KSRV6M97U5;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = eResus/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -294,7 +339,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = JND.eResus;
+				PRODUCT_BUNDLE_IDENTIFIER = co.uk.aegismedicalsolutions.eResus;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
