@@ -6,15 +6,16 @@
 //
 
 import SwiftUI
+import SwiftData
 
 @main
 struct eResusApp: App {
-    let persistenceController = PersistenceController.shared
-
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environment(\.managedObjectContext, persistenceController.container.viewContext)
+            MainTabView()
         }
+        // Injects the shared database container into the SwiftUI environment,
+        // making it available to all views in the app.
+        .modelContainer(sharedModelContainer)
     }
 }
