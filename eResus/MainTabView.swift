@@ -21,6 +21,7 @@ struct MainTabView: View {
 // The main view logic is moved into this implementation struct.
 fileprivate struct MainTabViewImplementation: View {
     @AppStorage("appearanceMode") private var appearanceMode: AppearanceMode = .system
+    @AppStorage("hasViewedIntro") private var hasViewedIntro: Bool = false
     @EnvironmentObject private var appState: AppState
     
     // Create the ArrestViewModel here as a StateObject so it persists
@@ -28,6 +29,7 @@ fileprivate struct MainTabViewImplementation: View {
     @StateObject private var arrestViewModel: ArrestViewModel
     
     @State private var pdfToShow: PDFIdentifiable?
+    @State private var showIntro: Bool = false
     
     // The initializer now receives the modelContext from the parent wrapper view.
     init(modelContext: ModelContext) {
@@ -83,6 +85,20 @@ fileprivate struct MainTabViewImplementation: View {
             
             // Reset the pending action so it doesn't fire again.
             appState.pendingAction = nil
+        }
+        .onAppear {
+            // If the user hasn't seen the intro, set our state variable to
+            // true, which will trigger the sheet to be presented.
+            if !hasViewedIntro {
+                showIntro = true
+            }
+        }
+        .sheet(isPresented: $showIntro) {
+            // When the sheet is dismissed, we set hasViewedIntro to true
+            // so it won't be shown again on the next app launch.
+            hasViewedIntro = true
+        } content: {
+            IntroView(isPresented: $showIntro)
         }
     }
     
