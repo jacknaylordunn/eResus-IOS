@@ -19,11 +19,21 @@ final class SavedArrestLog {
     @Relationship(deleteRule: .cascade, inverse: \Event.log)
     var events: [Event]
     
-    init(startTime: Date, totalDuration: TimeInterval, finalOutcome: String, events: [Event]) {
+    // Adding default values here fixes the SwiftData migration crash for older logs
+    var shockCount: Int = 0
+    var adrenalineCount: Int = 0
+    var amiodaroneCount: Int = 0
+    var roscTime: TimeInterval?
+    
+    init(startTime: Date, totalDuration: TimeInterval, finalOutcome: String, events: [Event], shockCount: Int = 0, adrenalineCount: Int = 0, amiodaroneCount: Int = 0, roscTime: TimeInterval? = nil) {
         self.startTime = startTime
         self.totalDuration = totalDuration
         self.finalOutcome = finalOutcome
         self.events = events
+        self.shockCount = shockCount
+        self.adrenalineCount = adrenalineCount
+        self.amiodaroneCount = amiodaroneCount
+        self.roscTime = roscTime
     }
 }
 
@@ -48,6 +58,20 @@ final class Event {
     }
 }
 
+enum AirwayAdjunctType: String, Codable, CaseIterable, Identifiable {
+    case sga // Supraglottic Airway (i-Gel)
+    case ett // Endotracheal Tube
+    case unspecified
+    var id: String { rawValue }
+    var displayName: String {
+        switch self {
+        case .sga: return "Supraglottic Airway (i-Gel)"
+        case .ett: return "Endotracheal Tube"
+        case .unspecified: return "Unspecified"
+        }
+    }
+}
+
 
 // MARK: - App State Enums
 enum ArrestState: String, Codable {
@@ -62,6 +86,33 @@ enum ArrestState: String, Codable {
         case .active: return .red
         case .rosc: return .green
         case .ended: return .black
+        }
+    }
+}
+
+enum ArrestType: String, Codable {
+    case general = "GENERAL"
+    case newborn = "NEWBORN"
+}
+
+enum NLSState: String, Codable {
+    case initialAssessment
+    case inflationBreaths
+    case optimiseAirway
+    case advancedAirway
+    case ventilation
+    case continueVentilation
+    case compressions
+    
+    var title: String {
+        switch self {
+        case .initialAssessment: return "Initial Assessment"
+        case .inflationBreaths: return "Airway & Inflation Breaths"
+        case .optimiseAirway: return "Optimise Airway"
+        case .advancedAirway: return "Advanced Airway"
+        case .ventilation: return "Ventilation (30/min)"
+        case .continueVentilation: return "Continue Ventilation"
+        case .compressions: return "Chest Compressions (3:1)"
         }
     }
 }
@@ -168,9 +219,14 @@ struct ChecklistItem: Identifiable, Codable, Hashable {
 
 struct UndoState: Codable {
     let arrestState: ArrestState
+    let arrestType: ArrestType
+    let isPreterm: Bool
+    let nlsState: NLSState
     let masterTime: TimeInterval
     let cprTime: TimeInterval
     let timeOffset: TimeInterval
+    let nlsCycleDuration: TimeInterval
+    let isRhythmCheckDue: Bool
     let eventsData: Data
     let shockCount: Int
     let adrenalineCount: Int
@@ -183,9 +239,19 @@ struct UndoState: Codable {
     let reversibleCauses: [ChecklistItem]
     let postROSCTasks: [ChecklistItem]
     let postMortemTasks: [ChecklistItem]
+    let nlsPretermTasks: [ChecklistItem]
     let startTime: Date?
     let uiState: UIState
     let patientAgeCategory: PatientAgeCategory?
+    
+    let hideAdrenalinePrompt: Bool?
+    let hideAmiodaronePrompt: Bool?
+    let lastRhythmNonShockable: Bool?
+    let airwayAdjunct: AirwayAdjunctType?
+    let roscTime: TimeInterval?
+    
+    let isTimerPaused: Bool?
+    let pauseStartTime: Date?
 }
 
 struct PDFIdentifiable: Identifiable, Hashable {
@@ -224,9 +290,16 @@ struct AppConstants {
         ChecklistItem(name: "Consider organ/tissue donation")
     ]
     
+    static let nlsPretermTasksTemplate: [ChecklistItem] = [
+        ChecklistItem(name: "Consider CPAP (5-8 cm H₂O) if breathing"),
+        ChecklistItem(name: "Check Blood Glucose"),
+        ChecklistItem(name: "Titrate O₂ to target SpO₂"),
+    ]
+    
     static let otherDrugs: [String] = [
         "Adenosine", "Adrenaline 1:1000", "Adrenaline 1:10,000", "Amiodarone (Further Dose)",
         "Atropine", "Calcium chloride", "Glucose", "Hartmann’s solution", "Magnesium sulphate",
         "Midazolam", "Naloxone", "Potassium chloride", "Sodium bicarbonate", "Sodium chloride", "Tranexamic acid"
     ].sorted()
 }
+

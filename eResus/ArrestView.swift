@@ -24,6 +24,7 @@ struct ArrestView: View {
     @State private var showHypothermiaModal = false
     @State private var showSummaryModal = false
     @State private var showResetModal = false
+    @State private var showAirwayAdjunctModal = false
     @Binding var pdfToShow: PDFIdentifiable?
     @State private var drugToLog: DrugToLog?
     @State private var drugConfirmationToShow: DrugConfirmation?
@@ -43,17 +44,27 @@ struct ArrestView: View {
                     case .pending:
                         PendingView(viewModel: viewModel, pdfToShow: $pdfToShow)
                     case .active:
-                        ActiveArrestContentView(
-                            viewModel: viewModel,
-                            metronome: metronome,
-                            showOtherDrugsModal: $showOtherDrugsModal,
-                            showEtco2Modal: $showEtco2Modal,
-                            showHypothermiaModal: $showHypothermiaModal,
-                            pdfToShow: $pdfToShow,
-                            onLogAdrenaline: handleAdrenaline,
-                            onLogAmiodarone: handleAmiodarone,
-                            onLogLidocaine: handleLidocaine
-                        )
+                        if viewModel.arrestType == .general {
+                            ActiveArrestContentView(
+                                viewModel: viewModel,
+                                metronome: metronome,
+                                showOtherDrugsModal: $showOtherDrugsModal,
+                                showEtco2Modal: $showEtco2Modal,
+                                showHypothermiaModal: $showHypothermiaModal,
+                                pdfToShow: $pdfToShow, showAirwayAdjunctModal: $showAirwayAdjunctModal,
+                                onLogAdrenaline: handleAdrenaline,
+                                onLogAmiodarone: handleAmiodarone,
+                                onLogLidocaine: handleLidocaine
+                            )
+                        } else {
+                            NewbornActiveArrestContentView(
+                                viewModel: viewModel,
+                                metronome: metronome,
+                                showOtherDrugsModal: $showOtherDrugsModal,
+                                pdfToShow: $pdfToShow, showAirwayAdjunctModal: $showAirwayAdjunctModal,
+                                onLogAdrenaline: handleAdrenaline
+                            )
+                        }
                     case .rosc:
                         RoscView(
                             viewModel: viewModel,
@@ -90,8 +101,22 @@ struct ArrestView: View {
         .sheet(isPresented: $showHypothermiaModal) {
             HypothermiaModal(isPresented: $showHypothermiaModal, onConfirm: viewModel.setHypothermiaStatus)
         }
+        .sheet(isPresented: $showAirwayAdjunctModal) {
+            AirwayAdjunctModal(isPresented: $showAirwayAdjunctModal) { type in
+                viewModel.logAirwayPlaced(type: type)
+            }
+        }
         .sheet(isPresented: $showSummaryModal) {
-            SummaryView(events: viewModel.events, totalTime: viewModel.totalArrestTime)
+            SummaryView(
+                events: viewModel.events,
+                totalTime: viewModel.totalArrestTime,
+                startTime: viewModel.arrestStartTime,
+                shockCount: viewModel.shockCount,
+                adrenalineCount: viewModel.adrenalineCount,
+                amiodaroneCount: viewModel.amiodaroneCount,
+                lidocaineCount: viewModel.lidocaineCount,
+                roscTime: viewModel.roscTime
+            )
         }
         .sheet(isPresented: $showResetModal) {
             ResetModalView(
@@ -192,3 +217,4 @@ struct ArrestView: View {
         }
     }
 }
+

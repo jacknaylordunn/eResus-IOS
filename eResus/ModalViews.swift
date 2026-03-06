@@ -10,6 +10,12 @@ import SwiftUI
 struct SummaryView: View {
     let events: [Event]
     let totalTime: TimeInterval
+    let startTime: Date?
+    let shockCount: Int
+    let adrenalineCount: Int
+    let amiodaroneCount: Int
+    let lidocaineCount: Int
+    let roscTime: TimeInterval?
     
     @Environment(\.dismiss) private var dismiss
     
@@ -22,9 +28,16 @@ struct SummaryView: View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading) {
-                    Text("Total Arrest Time: \(TimeFormatter.format(totalTime))")
-                        .font(.headline)
-                        .padding(.bottom)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Start: \(startTime.map { DateFormatter.localizedString(from: $0, dateStyle: .none, timeStyle: .short) } ?? "Unknown")")
+                        Text("Total Time: \(TimeFormatter.format(totalTime))")
+                        Text("Shocks: \(shockCount)  |  Adrenaline: \(adrenalineCount)  |  Amiodarone: \(amiodaroneCount)  |  Lidocaine: \(lidocaineCount)")
+                        if let rosc = roscTime {
+                            Text("ROSC at: \(TimeFormatter.format(rosc))")
+                        }
+                    }
+                    .font(.headline)
+                    .padding(.bottom)
                     
                     // Iterate over the correctly sorted events
                     ForEach(sortedEvents) { event in
@@ -60,15 +73,17 @@ struct SummaryView: View {
     }
     
     private func copySummary() {
-        // Use the sorted events for the clipboard text as well
-        let summaryText = """
+        let startText = startTime.map { DateFormatter.localizedString(from: $0, dateStyle: .none, timeStyle: .short) } ?? "Unknown"
+        let roscText = roscTime.map { "ROSC at: \(TimeFormatter.format($0))" } ?? "ROSC: Not achieved"
+        let header = """
         eResus Event Summary
+        Start Time (clock): \(startText)
         Total Arrest Time: \(TimeFormatter.format(totalTime))
-        
-        --- Event Log ---
-        \(sortedEvents.map { "[\(TimeFormatter.format($0.timestamp))] \($0.message)" }.joined(separator: "\n"))
+        Shocks: \(shockCount)  |  Adrenaline: \(adrenalineCount)  |  Amiodarone: \(amiodaroneCount)  |  Lidocaine: \(lidocaineCount)
+        \(roscText)
         """
-        UIPasteboard.general.string = summaryText
+        let log = sortedEvents.map { "[\(TimeFormatter.format($0.timestamp))] \($0.message)" }.joined(separator: "\n")
+        UIPasteboard.general.string = header + "\n\n--- Event Log ---\n" + log
         HapticManager.shared.impact(style: .medium)
     }
 }
@@ -367,3 +382,4 @@ struct DosageEntryModal: View {
     @State private var manualAmount: String = ""
     @State private var manualUnit: String = "mg"
 }
+

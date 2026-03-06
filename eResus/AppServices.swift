@@ -35,10 +35,18 @@ struct HapticManager {
     }
 }
 
+// MARK: - Metronome Mode
+enum MetronomeMode {
+    case general
+    case nls
+}
+
 // MARK: - Metronome
 @MainActor
 class Metronome: ObservableObject {
     @Published var isMetronomeOn = false
+    var mode: MetronomeMode = .general
+    
     private var audioPlayer: AVAudioPlayer?
     private var timer: Timer?
 
@@ -106,26 +114,59 @@ class Metronome: ObservableObject {
             stop()
         }
     }
+    
+    func turnOff() {
+        if isMetronomeOn {
+            isMetronomeOn = false
+            stop()
+        }
+    }
 
     private func start() {
         stop()
-        let interval = 60.0 / Double(AppSettings.metronomeBPM)
         
-        // Schedule timer on common run loop to prevent pausing during UI interaction
-        let newTimer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
-            self?.audioPlayer?.currentTime = 0
-            self?.audioPlayer?.play()
+        if mode == .general {
+            let interval = 60.0 / Double(AppSettings.metronomeBPM)
+            
+            let newTimer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+                self?.playSound()
+            }
+            RunLoop.main.add(newTimer, forMode: .common)
+            self.timer = newTimer
+            newTimer.fire()
+            
+        } else if mode == .nls {
+            // NLS 3:1 Ratio Mode (182bpm = 0.33s intervals)
+            var step = 0
+            let interval = 0.333333
+            
+            let newTimer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+                guard let self = self else { return }
+                
+                // Beats 0, 1, 2 play a sound. Beats 3, 4, 5 are silent (1 second total pause for ventilation)
+                if step < 3 {
+                    self.playSound()
+                }
+                
+                step += 1
+                if step >= 6 {
+                    step = 0
+                }
+            }
+            RunLoop.main.add(newTimer, forMode: .common)
+            self.timer = newTimer
+            newTimer.fire()
         }
-        RunLoop.main.add(newTimer, forMode: .common)
-        self.timer = newTimer
-        
-        // Fire immediately to start on time
-        newTimer.fire()
     }
 
     private func stop() {
         timer?.invalidate()
         timer = nil
+    }
+    
+    private func playSound() {
+        audioPlayer?.currentTime = 0
+        audioPlayer?.play()
     }
 }
 

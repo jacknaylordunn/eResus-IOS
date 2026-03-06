@@ -39,7 +39,16 @@ struct LogbookView: View {
             .navigationTitle("Logbook")
             .sheet(item: $selectedLog) { log in
                 // The events need to be converted from a persistent array to a regular array for the view
-                SummaryView(events: Array(log.events), totalTime: log.totalDuration)
+                SummaryView(
+                    events: Array(log.events),
+                    totalTime: log.totalDuration,
+                    startTime: log.startTime,
+                    shockCount: log.shockCount,
+                    adrenalineCount: log.adrenalineCount,
+                    amiodaroneCount: log.amiodaroneCount,
+                    lidocaineCount: 0,
+                    roscTime: log.roscTime
+                )
             }
         }
     }
@@ -52,3 +61,4 @@ struct LogbookView: View {
         }
     }
 }
+
