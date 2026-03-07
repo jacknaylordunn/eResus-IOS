@@ -103,9 +103,9 @@ class ArrestViewModel: ObservableObject {
     var shouldShowAdrenalinePrompt: Bool {
         guard isAdrenalineAvailable && !hideAdrenalinePrompt else { return false }
         
-        // 1. Timer-based prompt for subsequent doses (every 3-5 mins)
+        // 1. Don't show the "Consider" prompt if the timer is already showing the critical "Due" warning
         if let timeUntil = timeUntilAdrenaline, timeUntil <= 0 {
-            return true
+            return false
         }
         
         // 2. Initial dose logic
