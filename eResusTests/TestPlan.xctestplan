@@ -1,0 +1,24 @@
+{
+  "configurations" : [
+    {
+      "id" : "4F818876-9B47-43E0-80AA-2B04C092DDA3",
+      "name" : "Configuration 1",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "testTimeoutsEnabled" : true
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:eResus.xcodeproj",
+        "identifier" : "6A79BCDA2F5CEAE400954878",
+        "name" : "eResusTests"
+      }
+    }
+  ],
+  "version" : 1
+}

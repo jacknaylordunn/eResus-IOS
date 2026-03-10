@@ -6,6 +6,20 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		6A79BCE52F5CEC1D00954878 /* TestPlan.xctestplan in Resources */ = {isa = PBXBuildFile; fileRef = 6A79BCE42F5CEC1D00954878 /* TestPlan.xctestplan */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		6A79BCDF2F5CEAE400954878 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6A18C8CF2E7108D100EE002E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 6A18C8D62E7108D100EE002E;
+			remoteInfo = eResus;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXCopyFilesBuildPhase section */
 		6A2990852E85A9EB00F29C0D /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
@@ -22,6 +36,8 @@
 /* Begin PBXFileReference section */
 		6A18C8D72E7108D100EE002E /* eResus.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = eResus.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6A2990702E85A9E800F29C0D /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		6A79BCDB2F5CEAE400954878 /* eResusTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = eResusTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		6A79BCE42F5CEC1D00954878 /* TestPlan.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; name = TestPlan.xctestplan; path = eResusTests/TestPlan.xctestplan; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -43,10 +59,22 @@
 			path = eResus;
 			sourceTree = "<group>";
 		};
+		6A79BCDC2F5CEAE400954878 /* eResusTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = eResusTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		6A18C8D42E7108D100EE002E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6A79BCD82F5CEAE400954878 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -59,7 +87,9 @@
 		6A18C8CE2E7108D100EE002E = {
 			isa = PBXGroup;
 			children = (
+				6A79BCE42F5CEC1D00954878 /* TestPlan.xctestplan */,
 				6A18C8D92E7108D100EE002E /* eResus */,
+				6A79BCDC2F5CEAE400954878 /* eResusTests */,
 				6A29906D2E85A9E800F29C0D /* Frameworks */,
 				6A18C8D82E7108D100EE002E /* Products */,
 			);
@@ -69,6 +99,7 @@
 			isa = PBXGroup;
 			children = (
 				6A18C8D72E7108D100EE002E /* eResus.app */,
+				6A79BCDB2F5CEAE400954878 /* eResusTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -107,6 +138,29 @@
 			productReference = 6A18C8D72E7108D100EE002E /* eResus.app */;
 			productType = "com.apple.product-type.application";
 		};
+		6A79BCDA2F5CEAE400954878 /* eResusTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6A79BCE12F5CEAE400954878 /* Build configuration list for PBXNativeTarget "eResusTests" */;
+			buildPhases = (
+				6A79BCD72F5CEAE400954878 /* Sources */,
+				6A79BCD82F5CEAE400954878 /* Frameworks */,
+				6A79BCD92F5CEAE400954878 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				6A79BCE02F5CEAE400954878 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				6A79BCDC2F5CEAE400954878 /* eResusTests */,
+			);
+			name = eResusTests;
+			packageProductDependencies = (
+			);
+			productName = eResusTests;
+			productReference = 6A79BCDB2F5CEAE400954878 /* eResusTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -114,11 +168,15 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2600;
+				LastSwiftUpdateCheck = 2630;
 				LastUpgradeCheck = 2600;
 				TargetAttributes = {
 					6A18C8D62E7108D100EE002E = {
 						CreatedOnToolsVersion = 16.4;
+					};
+					6A79BCDA2F5CEAE400954878 = {
+						CreatedOnToolsVersion = 26.3;
+						TestTargetID = 6A18C8D62E7108D100EE002E;
 					};
 				};
 			};
@@ -137,12 +195,21 @@
 			projectRoot = "";
 			targets = (
 				6A18C8D62E7108D100EE002E /* eResus */,
+				6A79BCDA2F5CEAE400954878 /* eResusTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		6A18C8D52E7108D100EE002E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6A79BCE52F5CEC1D00954878 /* TestPlan.xctestplan in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6A79BCD92F5CEAE400954878 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -159,7 +226,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		6A79BCD72F5CEAE400954878 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		6A79BCE02F5CEAE400954878 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 6A18C8D62E7108D100EE002E /* eResus */;
+			targetProxy = 6A79BCDF2F5CEAE400954878 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		6A18C8E52E7108D300EE002E /* Debug */ = {
@@ -349,6 +431,50 @@
 			};
 			name = Release;
 		};
+		6A79BCE22F5CEAE400954878 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5RVB349QB8;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = co.uk.aegismedicalsolutions.eResusTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/eResus.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/eResus";
+			};
+			name = Debug;
+		};
+		6A79BCE32F5CEAE400954878 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5RVB349QB8;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = co.uk.aegismedicalsolutions.eResusTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/eResus.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/eResus";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -366,6 +492,15 @@
 			buildConfigurations = (
 				6A18C8E82E7108D300EE002E /* Debug */,
 				6A18C8E92E7108D300EE002E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		6A79BCE12F5CEAE400954878 /* Build configuration list for PBXNativeTarget "eResusTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6A79BCE22F5CEAE400954878 /* Debug */,
+				6A79BCE32F5CEAE400954878 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
