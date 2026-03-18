@@ -49,6 +49,12 @@ class ArrestViewModel: ObservableObject {
     
     @Published var isTimerPaused: Bool = false
     
+    // NEW: Research Variables
+    @Published var patientAgeStr: String = ""
+    @Published var patientGenderStr: String = ""
+    @Published var initialRhythm: String? = nil
+    @Published var showPatientInfoPrompt: Bool = false
+    
     // MARK: - Private State Properties
     private var timer: Timer?
     private var startTime: Date?
@@ -199,8 +205,13 @@ class ArrestViewModel: ObservableObject {
         pauseStartTime = nil
         arrestType = .general
         arrestState = .active
+        initialRhythm = nil // Reset
         logEvent("Arrest Started at \(Date().formatted(date: .omitted, time: .standard))", type: .status)
         startTimer()
+        
+        if AppSettings.researchModeEnabled || AppSettings.askForPatientInfo {
+            showPatientInfoPrompt = true
+        }
     }
     
     func startNewbornArrest(isPreterm: Bool) {
@@ -211,6 +222,7 @@ class ArrestViewModel: ObservableObject {
         arrestType = .newborn
         self.isPreterm = isPreterm
         self.patientAgeCategory = .atBirth // Set default age category for dosage logic
+        self.patientAgeStr = "Newborn"
         arrestState = .active
         nlsState = .initialAssessment
         nlsCycleDuration = 60
@@ -239,6 +251,11 @@ class ArrestViewModel: ObservableObject {
     
     func logRhythm(_ rhythm: String, isShockable: Bool) {
         saveUndoState()
+        
+        if initialRhythm == nil {
+            initialRhythm = rhythm
+        }
+        
         logEvent("Rhythm is \(rhythm)", type: .rhythm)
         lastRhythmNonShockable = !isShockable
         if !isShockable { hideAdrenalinePrompt = false }
@@ -443,7 +460,12 @@ class ArrestViewModel: ObservableObject {
         logEvent("Reassessed Patient HR and Chest Rise", type: .status)
     }
     
-    // MARK: - Undo & Reset Logic
+    // MARK: - Undo & Session Transfer Logic
+    func generateTransferState() -> UndoState? {
+        saveUndoState()
+        return undoHistory.last
+    }
+    
     private func saveUndoState() {
         do {
             let eventsData = try JSONEncoder().encode(events.map { EventCodable(from: $0) })
@@ -459,7 +481,8 @@ class ArrestViewModel: ObservableObject {
                 patientAgeCategory: patientAgeCategory,
                 hideAdrenalinePrompt: hideAdrenalinePrompt, hideAmiodaronePrompt: hideAmiodaronePrompt,
                 lastRhythmNonShockable: lastRhythmNonShockable, airwayAdjunct: airwayAdjunct, roscTime: roscTime,
-                isTimerPaused: isTimerPaused, pauseStartTime: pauseStartTime
+                isTimerPaused: isTimerPaused, pauseStartTime: pauseStartTime,
+                initialRhythm: initialRhythm, patientAgeStr: patientAgeStr, patientGenderStr: patientGenderStr
             )
             undoHistory.append(currentState)
         } catch {
@@ -469,44 +492,58 @@ class ArrestViewModel: ObservableObject {
     
     func undo() {
         guard let lastState = undoHistory.popLast() else { return }
-        
+        applyState(lastState)
+    }
+    
+    func restoreFromTransfer(state: UndoState) {
+        stopTimer()
+        applyState(state)
+        logEvent("Session Transferred from another device", type: .status)
+        undoHistory.removeAll() // Start fresh
+    }
+    
+    private func applyState(_ state: UndoState) {
         do {
-            let decodedEvents = try JSONDecoder().decode([EventCodable].self, from: lastState.eventsData)
+            let decodedEvents = try JSONDecoder().decode([EventCodable].self, from: state.eventsData)
             events = decodedEvents.map { $0.toEvent() }
             
-            arrestState = lastState.arrestState
-            arrestType = lastState.arrestType
-            isPreterm = lastState.isPreterm
-            nlsState = lastState.nlsState
-            masterTime = lastState.masterTime
-            cprTime = lastState.cprTime
-            timeOffset = lastState.timeOffset
-            nlsCycleDuration = lastState.nlsCycleDuration
-            isRhythmCheckDue = lastState.isRhythmCheckDue
-            shockCount = lastState.shockCount
-            adrenalineCount = lastState.adrenalineCount
-            amiodaroneCount = lastState.amiodaroneCount
-            lidocaineCount = lastState.lidocaineCount
-            lastAdrenalineTime = lastState.lastAdrenalineTime
-            antiarrhythmicGiven = lastState.antiarrhythmicGiven
-            shockCountForAmiodarone1 = lastState.shockCountForAmiodarone1
-            airwayPlaced = lastState.airwayPlaced
-            reversibleCauses = lastState.reversibleCauses
-            postROSCTasks = lastState.postROSCTasks
-            postMortemTasks = lastState.postMortemTasks
-            nlsPretermTasks = lastState.nlsPretermTasks
-            startTime = lastState.startTime
-            uiState = lastState.uiState
-            patientAgeCategory = lastState.patientAgeCategory
+            arrestState = state.arrestState
+            arrestType = state.arrestType
+            isPreterm = state.isPreterm
+            nlsState = state.nlsState
+            masterTime = state.masterTime
+            cprTime = state.cprTime
+            timeOffset = state.timeOffset
+            nlsCycleDuration = state.nlsCycleDuration
+            isRhythmCheckDue = state.isRhythmCheckDue
+            shockCount = state.shockCount
+            adrenalineCount = state.adrenalineCount
+            amiodaroneCount = state.amiodaroneCount
+            lidocaineCount = state.lidocaineCount
+            lastAdrenalineTime = state.lastAdrenalineTime
+            antiarrhythmicGiven = state.antiarrhythmicGiven
+            shockCountForAmiodarone1 = state.shockCountForAmiodarone1
+            airwayPlaced = state.airwayPlaced
+            reversibleCauses = state.reversibleCauses
+            postROSCTasks = state.postROSCTasks
+            postMortemTasks = state.postMortemTasks
+            nlsPretermTasks = state.nlsPretermTasks
+            startTime = state.startTime
+            uiState = state.uiState
+            patientAgeCategory = state.patientAgeCategory
             
-            hideAdrenalinePrompt = lastState.hideAdrenalinePrompt ?? false
-            hideAmiodaronePrompt = lastState.hideAmiodaronePrompt ?? false
-            lastRhythmNonShockable = lastState.lastRhythmNonShockable ?? false
-            airwayAdjunct = lastState.airwayAdjunct
-            roscTime = lastState.roscTime
+            hideAdrenalinePrompt = state.hideAdrenalinePrompt ?? false
+            hideAmiodaronePrompt = state.hideAmiodaronePrompt ?? false
+            lastRhythmNonShockable = state.lastRhythmNonShockable ?? false
+            airwayAdjunct = state.airwayAdjunct
+            roscTime = state.roscTime
             
-            isTimerPaused = lastState.isTimerPaused ?? false
-            pauseStartTime = lastState.pauseStartTime
+            isTimerPaused = state.isTimerPaused ?? false
+            pauseStartTime = state.pauseStartTime
+            
+            initialRhythm = state.initialRhythm
+            patientAgeStr = state.patientAgeStr ?? ""
+            patientGenderStr = state.patientGenderStr ?? ""
             
             if (arrestState == .active || arrestState == .rosc) && !isTimerPaused && timer == nil {
                 startTimer()
@@ -514,7 +551,7 @@ class ArrestViewModel: ObservableObject {
                 stopTimer()
             }
         } catch {
-            print("Failed to restore undo state: \(error)")
+            print("Failed to restore state: \(error)")
         }
     }
 
@@ -561,6 +598,11 @@ class ArrestViewModel: ObservableObject {
         lastRhythmNonShockable = false
         airwayAdjunct = nil
         roscTime = nil
+        
+        patientAgeStr = ""
+        patientGenderStr = ""
+        initialRhythm = nil
+        showPatientInfoPrompt = false
     }
     
     private func saveLogToDatabase() {
@@ -581,7 +623,12 @@ class ArrestViewModel: ObservableObject {
             shockCount: shockCount,
             adrenalineCount: adrenalineCount,
             amiodaroneCount: amiodaroneCount,
-            roscTime: roscTime
+            roscTime: roscTime,
+            patientAge: patientAgeStr.isEmpty ? nil : patientAgeStr,
+            patientGender: patientGenderStr.isEmpty ? nil : patientGenderStr,
+            initialRhythm: initialRhythm,
+            organization: AppSettings.userOrganization.isEmpty ? nil : AppSettings.userOrganization,
+            isSynced: false
         )
         modelContext.insert(newLog)
         
@@ -592,6 +639,31 @@ class ArrestViewModel: ObservableObject {
         }
         
         try? modelContext.save()
+        
+        // Push to Firebase if enrolled
+        if AppSettings.researchModeEnabled {
+            FirebaseManager.shared.uploadLog(newLog, events: events)
+            newLog.isSynced = true
+        }
+    }
+    
+    // SAFETY NET: Sweep the database for any logs that weren't synced to Firebase previously
+    func syncOfflineLogs() {
+        guard AppSettings.researchModeEnabled else { return }
+        
+        let descriptor = FetchDescriptor<SavedArrestLog>(predicate: #Predicate { $0.isSynced == false })
+        
+        do {
+            let unsyncedLogs = try modelContext.fetch(descriptor)
+            for log in unsyncedLogs {
+                // Upload will automatically substitute "Unknown" for old logs missing demographics
+                FirebaseManager.shared.uploadLog(log, events: log.events)
+                log.isSynced = true
+            }
+            try modelContext.save()
+        } catch {
+            print("Failed to sweep and sync offline logs: \(error.localizedDescription)")
+        }
     }
     
     private func copySummaryToClipboard() {

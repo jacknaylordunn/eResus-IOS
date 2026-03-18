@@ -31,6 +31,9 @@ fileprivate struct MainTabViewImplementation: View {
     @State private var pdfToShow: PDFIdentifiable?
     @State private var showIntro: Bool = false
     
+    // NEW: State to trigger the Research Consent Modal
+    @State private var showResearchConsent: Bool = false
+    
     // The initializer now receives the modelContext from the parent wrapper view.
     init(modelContext: ModelContext) {
         _arrestViewModel = StateObject(wrappedValue: ArrestViewModel(modelContext: modelContext))
@@ -87,18 +90,30 @@ fileprivate struct MainTabViewImplementation: View {
             appState.pendingAction = nil
         }
         .onAppear {
-            // If the user hasn't seen the intro, set our state variable to
-            // true, which will trigger the sheet to be presented.
+            // Check if we need to show intro or consent
             if !hasViewedIntro {
                 showIntro = true
+            } else if !AppSettings.hasRespondedToResearchTerms {
+                showResearchConsent = true
             }
         }
-        .sheet(isPresented: $showIntro) {
-            // When the sheet is dismissed, we set hasViewedIntro to true
-            // so it won't be shown again on the next app launch.
+        .sheet(isPresented: $showIntro, onDismiss: {
             hasViewedIntro = true
-        } content: {
+            // Show consent immediately after intro finishes if required
+            if !AppSettings.hasRespondedToResearchTerms {
+                showResearchConsent = true
+            }
+        }) {
             IntroView(isPresented: $showIntro)
+        }
+        // MARK: - New Consent Hook
+        .sheet(isPresented: $showResearchConsent) {
+            ResearchConsentView(isPresented: $showResearchConsent)
+                .interactiveDismissDisabled() // Ensure they choose an option
+        }
+        .task {
+            // Trigger offline log sweep silently in the background
+            arrestViewModel.syncOfflineLogs()
         }
     }
     

@@ -8,15 +8,48 @@
 import SwiftUI
 
 struct SettingsView: View {
+    @StateObject private var firebaseManager = FirebaseManager.shared
+    
     @AppStorage("cprCycleDuration") private var cprCycleDuration: TimeInterval = 120
     @AppStorage("adrenalineInterval") private var adrenalineInterval: TimeInterval = 240
     @AppStorage("metronomeBPM") private var metronomeBPM: Int = 110
     @AppStorage("appearanceMode") private var appearanceMode: AppearanceMode = .system
     @AppStorage("showDosagePrompts") private var showDosagePrompts: Bool = false
     
+    // Research mode states
+    @AppStorage("researchModeEnabled") private var researchModeEnabled: Bool = true
+    @AppStorage("userOrganization") private var userOrganization: String = ""
+    @AppStorage("askForPatientInfo") private var askForPatientInfo: Bool = false
+    
     var body: some View {
         NavigationView {
             Form {
+                // MARK: - Account & Sync Section
+                Section(header: Text("Account & Sync")) {
+                    NavigationLink(destination: AuthView()) {
+                        Text("Sign In / Account Profile")
+                    }
+                }
+                
+                // MARK: - Research Section
+                Section(header: Text("Research & Data"), footer: Text("When enrolled, eResus securely uploads anonymised logs to help improve cardiac arrest outcomes.")) {
+                    Toggle("Enroll in Research", isOn: $researchModeEnabled)
+                    
+                    if researchModeEnabled {
+                        // NEW: Dynamic Picker inside Settings
+                        Picker("Organization / Trust", selection: $userOrganization) {
+                            ForEach(firebaseManager.availableOrganizations, id: \.self) { org in
+                                Text(org).tag(org)
+                            }
+                        }
+                    } else {
+                        Toggle("Ask for Patient Info Locally", isOn: $askForPatientInfo)
+                    }
+                    
+                    Link("View Data Policy", destination: URL(string: "https://tech.aegismedicalsolutions.co.uk/eresus/data-policy")!)
+                        .foregroundColor(.blue)
+                }
+                
                 Section(header: Text("Timers")) {
                     Stepper("CPR Cycle: \(Int(cprCycleDuration)) seconds", value: $cprCycleDuration, in: 60...300, step: 10)
                     Stepper("Adrenaline Interval: \(Int(adrenalineInterval / 60)) minutes", value: $adrenalineInterval, in: 120...600, step: 60)
@@ -40,6 +73,13 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+        }
+        .onAppear {
+            // Guarantee "Independent / None" shows by default instead of a blank menu
+            if userOrganization.isEmpty {
+                userOrganization = "Independent / None"
+            }
+            firebaseManager.fetchOrganizations()
         }
     }
 }

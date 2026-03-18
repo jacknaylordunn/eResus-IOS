@@ -13,5 +13,23 @@
 			<array/>
 		</dict>
 	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>eResus Active Session</string>
+			<key>UTTypeIconFiles</key>
+			<array/>
+			<key>UTTypeIdentifier</key>
+			<string>com​.eresus​.session</string>
+			<key>UTTypeTagSpecification</key>
+			<dict/>
+		</dict>
+		<dict/>
+	</array>
 </dict>
 </plist>

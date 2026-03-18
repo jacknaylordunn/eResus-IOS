@@ -91,7 +91,18 @@ struct ArrestView: View {
             }
         }
         .edgesIgnoringSafeArea(.bottom)
+        // MARK: - Native AirDrop Receiver
+        .dropDestination(for: UndoState.self) { items, location in
+            if let transferState = items.first {
+                viewModel.restoreFromTransfer(state: transferState)
+                return true
+            }
+            return false
+        }
         // MARK: - Modal Sheets
+        .sheet(isPresented: $viewModel.showPatientInfoPrompt) {
+            PatientInfoPromptView(viewModel: viewModel)
+        }
         .sheet(isPresented: $showOtherDrugsModal) {
             OtherDrugsModal(isPresented: $showOtherDrugsModal, onSelectDrug: handleOtherDrug)
         }

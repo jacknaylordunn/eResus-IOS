@@ -338,6 +338,11 @@ struct ActiveArrestContentView: View {
     let onLogAmiodarone: () -> Void
     let onLogLidocaine: () -> Void
     
+    // NEW: Transfer Modals for ActiveArrestContentView
+    @State private var showTransferModal = false
+    @State private var showQRScanner = false
+    @State private var scannedCode: String? = nil
+    
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
@@ -383,14 +388,60 @@ struct ActiveArrestContentView: View {
                 ChecklistView(title: "Reversible Causes (4 H's & 4 T's)", items: $viewModel.reversibleCauses, viewModel: viewModel, showHypothermiaModal: $showHypothermiaModal)
                 
                 EventLogView(events: viewModel.events)
+                
+                // MARK: - Transfer Arrest Button (At bottom of log)
+                VStack(spacing: 12) {
+                    Divider().padding(.horizontal)
+                    
+                    Menu {
+                        Button { showTransferModal = true } label: {
+                            Label("Share/Transfer Session", systemImage: "square.and.arrow.up")
+                        }
+                        Button { showQRScanner = true } label: {
+                            Label("Receive via QR", systemImage: "qrcode.viewfinder")
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.right.arrow.left")
+                            Text("Transfer Arrest")
+                        }
+                        .font(.subheadline.bold())
+                        .foregroundColor(.blue)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 10)
+                        .background(Color(UIColor.secondarySystemBackground))
+                        .clipShape(Capsule())
+                        .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
+                    }
+                }
+                .padding(.vertical, 12)
             }
             .padding(.horizontal)
+            // Extra padding to clear the Bottom Controls
             .padding(.bottom, 200)
             .opacity(viewModel.isTimerPaused ? 0.5 : 1.0)
             .disabled(viewModel.isTimerPaused)
         }
         .onAppear {
             metronome.mode = .general
+        }
+        // Modals attached to the ScrollView
+        .sheet(isPresented: $showTransferModal) {
+            SessionTransferModal(viewModel: viewModel)
+        }
+        .fullScreenCover(isPresented: $showQRScanner) {
+            QRScannerView(scannedCode: $scannedCode)
+                .ignoresSafeArea()
+        }
+        .onChange(of: scannedCode) { newValue in
+            if let code = newValue {
+                FirebaseManager.shared.fetchSessionTransfer(transferId: code) { state in
+                    if let state = state {
+                        viewModel.restoreFromTransfer(state: state)
+                    }
+                }
+                scannedCode = nil
+            }
         }
     }
 }

@@ -8,6 +8,8 @@
 import Foundation
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
+import CoreTransferable
 
 // MARK: - Database Models
 @Model
@@ -25,7 +27,14 @@ final class SavedArrestLog {
     var amiodaroneCount: Int = 0
     var roscTime: TimeInterval?
     
-    init(startTime: Date, totalDuration: TimeInterval, finalOutcome: String, events: [Event], shockCount: Int = 0, adrenalineCount: Int = 0, amiodaroneCount: Int = 0, roscTime: TimeInterval? = nil) {
+    // NEW: Research Data Fields (Safely migrated for old logs)
+    var patientAge: String?
+    var patientGender: String?
+    var initialRhythm: String?
+    var organization: String?
+    var isSynced: Bool = false
+    
+    init(startTime: Date, totalDuration: TimeInterval, finalOutcome: String, events: [Event], shockCount: Int = 0, adrenalineCount: Int = 0, amiodaroneCount: Int = 0, roscTime: TimeInterval? = nil, patientAge: String? = nil, patientGender: String? = nil, initialRhythm: String? = nil, organization: String? = nil, isSynced: Bool = false) {
         self.startTime = startTime
         self.totalDuration = totalDuration
         self.finalOutcome = finalOutcome
@@ -34,6 +43,11 @@ final class SavedArrestLog {
         self.adrenalineCount = adrenalineCount
         self.amiodaroneCount = amiodaroneCount
         self.roscTime = roscTime
+        self.patientAge = patientAge
+        self.patientGender = patientGender
+        self.initialRhythm = initialRhythm
+        self.organization = organization
+        self.isSynced = isSynced
     }
 }
 
@@ -71,7 +85,6 @@ enum AirwayAdjunctType: String, Codable, CaseIterable, Identifiable {
         }
     }
 }
-
 
 // MARK: - App State Enums
 enum ArrestState: String, Codable {
@@ -179,10 +192,8 @@ enum DrugToLog: Identifiable {
     }
 }
 
-
 // MARK: - UI & Data Structs
 
-// A simple Codable version of Event for undo history
 struct EventCodable: Codable, Identifiable {
     let id: UUID
     let timestamp: TimeInterval
@@ -201,7 +212,6 @@ struct EventCodable: Codable, Identifiable {
     }
 }
 
-
 struct ChecklistItem: Identifiable, Codable, Hashable {
     let id: UUID
     let name: String
@@ -215,7 +225,6 @@ struct ChecklistItem: Identifiable, Codable, Hashable {
         self.hypothermiaStatus = hypothermiaStatus
     }
 }
-
 
 struct UndoState: Codable {
     let arrestState: ArrestState
@@ -252,6 +261,22 @@ struct UndoState: Codable {
     
     let isTimerPaused: Bool?
     let pauseStartTime: Date?
+    
+    // NEW
+    let initialRhythm: String?
+    let patientAgeStr: String?
+    let patientGenderStr: String?
+}
+
+// MARK: Transferable Conformance for AirDrop
+extension UTType {
+    static let eResusSession = UTType(exportedAs: "com.eresus.session")
+}
+
+extension UndoState: Transferable {
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .eResusSession)
+    }
 }
 
 struct PDFIdentifiable: Identifiable, Hashable {
@@ -267,6 +292,12 @@ struct AppSettings {
     @AppStorage("metronomeBPM") static var metronomeBPM: Int = 110
     @AppStorage("appearanceMode") static var appearanceMode: AppearanceMode = .system
     @AppStorage("showDosagePrompts") static var showDosagePrompts: Bool = false
+    
+    // NEW: Research & Data Collection
+    @AppStorage("researchModeEnabled") static var researchModeEnabled: Bool = true
+    @AppStorage("hasRespondedToResearchTerms") static var hasRespondedToResearchTerms: Bool = false
+    @AppStorage("askForPatientInfo") static var askForPatientInfo: Bool = false
+    @AppStorage("userOrganization") static var userOrganization: String = ""
 }
 
 struct AppConstants {

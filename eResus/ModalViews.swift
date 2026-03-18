@@ -18,6 +18,7 @@ struct SummaryView: View {
     let roscTime: TimeInterval?
     
     @Environment(\.dismiss) private var dismiss
+    @State private var isCopied: Bool = false
     
     // Sort events chronologically to ensure correct order
     private var sortedEvents: [Event] {
@@ -58,15 +59,28 @@ struct SummaryView: View {
             .navigationTitle("Event Summary")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
+                // Using leading/trailing removes the bulky capsule styling
+                ToolbarItem(placement: .navigationBarLeading) {
                     Button("Done") {
                         dismiss()
                     }
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Copy to Clipboard") {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
                         copySummary()
+                        // Provide visual feedback that it copied successfully
+                        withAnimation { isCopied = true }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            withAnimation { isCopied = false }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(isCopied ? "Copied!" : "Copy")
+                            Image(systemName: isCopied ? "checkmark" : "doc.on.clipboard")
+                        }
+                        .font(.body.bold())
                     }
+                    .tint(isCopied ? .green : .blue)
                 }
             }
         }
