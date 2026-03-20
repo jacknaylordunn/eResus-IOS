@@ -685,40 +685,39 @@ struct PLIIESection: View {
 struct DosageEntryModal: View {
     let drug: DrugToLog
     let amiodaroneDoseCount: Int
-    @Binding var patientAgeStr: String // Smart Binding to main demographics
+    @Binding var patientAgeStr: String
     let onConfirm: (String, PatientAgeCategory?) -> Void
     
     @Environment(\.dismiss) private var dismiss
-    @State private var age: PatientAgeCategory
+    
+    // We use a local state for the picker so it scrolls smoothly without infinite loops
+    @State private var localAge: PatientAgeCategory
 
-    init(drug: DrugToLog, amiodaroneDoseCount: Int, patientAgeStr: Binding<String>, onConfirm: @escaping (String, PatientAgeCategory?) -> Void) {
+    init(drug: DrugToLog, amiodaroneDoseCount: Int, patientAgeStr: Binding<String>, initialAgeCategory: PatientAgeCategory?, onConfirm: @escaping (String, PatientAgeCategory?) -> Void) {
         self.drug = drug
         self.amiodaroneDoseCount = amiodaroneDoseCount
         self._patientAgeStr = patientAgeStr
         self.onConfirm = onConfirm
         
-        // 1. SMART INIT: Parse the string from the demographics prompt
-        var defaultCategory: PatientAgeCategory? = nil
+        // 1. SMART INIT: Default to Adult if nothing was entered at the start of the arrest
+        var defaultCategory: PatientAgeCategory = .adult
         let ageString = patientAgeStr.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
         
         if let ageInt = Int(ageString) {
             if ageInt >= 12 {
-                // If 12 or older, find the "Adult" or "12+" case
-                defaultCategory = PatientAgeCategory.allCases.first(where: {
-                    let lower = $0.rawValue.lowercased()
-                    return lower.contains("adult") || lower.contains("12")
-                })
+                if let adultCase = PatientAgeCategory.allCases.first(where: { $0.rawValue.lowercased().contains("adult") || $0.rawValue.contains("12") }) {
+                    defaultCategory = adultCase
+                }
             } else {
-                // Find the exact matching child year
-                defaultCategory = PatientAgeCategory.allCases.first(where: {
-                    let nums = $0.rawValue.filter { $0.isNumber }
-                    return Int(nums) == ageInt
-                })
+                if let childCase = PatientAgeCategory.allCases.first(where: { Int($0.rawValue.filter { $0.isNumber }) == ageInt }) {
+                    defaultCategory = childCase
+                }
             }
+        } else if let initial = initialAgeCategory {
+            defaultCategory = initial
         }
         
-        // Fallback to the last case (usually Adult) if no match is found
-        _age = State(initialValue: defaultCategory ?? PatientAgeCategory.allCases.last!)
+        _localAge = State(initialValue: defaultCategory)
     }
 
     var body: some View {
@@ -728,12 +727,12 @@ struct DosageEntryModal: View {
                 case .adrenaline:
                     AgeBasedDosageView(
                         drugName: "Adrenaline",
-                        calculatedDose: DosageCalculator.calculateAdrenalineDose(for: age)
+                        calculatedDose: DosageCalculator.calculateAdrenalineDose(for: localAge)
                     )
                 case .amiodarone:
                     AgeBasedDosageView(
                         drugName: "Amiodarone",
-                        calculatedDose: DosageCalculator.calculateAmiodaroneDose(for: age, doseNumber: amiodaroneDoseCount + 1)
+                        calculatedDose: DosageCalculator.calculateAmiodaroneDose(for: localAge, doseNumber: amiodaroneDoseCount + 1)
                     )
                 case .lidocaine, .other:
                     ManualDosageView(drugName: drug.title)
@@ -747,20 +746,20 @@ struct DosageEntryModal: View {
                 }
             }
         }
-        .onChange(of: age) { newAge in
-            // 2. SMART REVERSE-SYNC: If user changes the picker, update the main log age!
-            let rawStr = newAge.rawValue.lowercased()
-            // Ignore if they select the 12+ / Adult generic bucket
+    }
+
+    private func confirm(dosage: String, age: PatientAgeCategory?) {
+        // 2. SMART SYNC ON SAVE: Update the master string ONLY when they actually log the drug!
+        if let confirmedAge = age {
+            let rawStr = confirmedAge.rawValue.lowercased()
             if !rawStr.contains("adult") && !rawStr.contains("12") {
-                let extractedNumber = newAge.rawValue.filter { $0.isNumber }
+                let extractedNumber = confirmedAge.rawValue.filter { $0.isNumber }
                 if !extractedNumber.isEmpty {
                     patientAgeStr = extractedNumber
                 }
             }
         }
-    }
-
-    private func confirm(dosage: String, age: PatientAgeCategory?) {
+        
         onConfirm(dosage, age)
         dismiss()
     }
@@ -770,7 +769,7 @@ struct DosageEntryModal: View {
     private func AgeBasedDosageView(drugName: String, calculatedDose: String?) -> some View {
         Form {
             Section(header: Text("Patient Age")) {
-                Picker("Age Category", selection: $age) {
+                Picker("Age Category", selection: $localAge) {
                     ForEach(PatientAgeCategory.allCases) { category in
                         Text(category.rawValue).tag(category)
                     }
@@ -784,7 +783,7 @@ struct DosageEntryModal: View {
                             .font(.title2.bold())
                             .frame(maxWidth: .infinity, alignment: .center)
 
-                        Button(action: { confirm(dosage: dose, age: self.age) }) {
+                        Button(action: { confirm(dosage: dose, age: self.localAge) }) {
                             Text("Log Calculated Dose")
                                 .fontWeight(.semibold)
                                 .frame(maxWidth: .infinity)
@@ -800,7 +799,7 @@ struct DosageEntryModal: View {
             }
             
             ManualDosageSection { manualDose in
-                confirm(dosage: manualDose, age: self.age)
+                confirm(dosage: manualDose, age: self.localAge)
             }
         }
     }
@@ -815,7 +814,7 @@ struct DosageEntryModal: View {
         }
     }
 
-    // Reusable Manual Entry Section (Redesigned)
+    // Reusable Manual Entry Section
     @ViewBuilder
     private func ManualDosageSection(onConfirm: @escaping (String) -> Void) -> some View {
         Section(header: Text("Manual Override")) {
