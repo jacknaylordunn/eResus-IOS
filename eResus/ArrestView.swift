@@ -166,19 +166,19 @@ struct ArrestView: View {
             TORGuidanceModal(viewModel: viewModel, isPresented: $showTORModal)
         }
         .sheet(isPresented: $showSummaryModal) {
-                    SummaryView(
-                        events: viewModel.events,
-                        totalTime: viewModel.totalArrestTime,
-                        startTime: viewModel.arrestStartTime,
-                        shockCount: viewModel.shockCount,
-                        adrenalineCount: viewModel.adrenalineCount,
-                        amiodaroneCount: viewModel.amiodaroneCount,
-                        lidocaineCount: viewModel.lidocaineCount,
-                        roscTime: viewModel.roscTime,
-                        patientAge: viewModel.patientAgeStr.isEmpty ? nil : viewModel.patientAgeStr,
-                        patientGender: viewModel.patientGenderStr.isEmpty ? nil : viewModel.patientGenderStr
-                    )
-                }
+            SummaryView(
+                events: viewModel.events,
+                totalTime: viewModel.totalArrestTime,
+                startTime: viewModel.arrestStartTime,
+                shockCount: viewModel.shockCount,
+                adrenalineCount: viewModel.adrenalineCount,
+                amiodaroneCount: viewModel.amiodaroneCount,
+                lidocaineCount: viewModel.lidocaineCount,
+                roscTime: viewModel.roscTime,
+                patientAge: viewModel.patientAgeStr.isEmpty ? nil : viewModel.patientAgeStr,
+                patientGender: viewModel.patientGenderStr.isEmpty ? nil : viewModel.patientGenderStr
+            )
+        }
         .sheet(isPresented: $showResetModal) {
             ResetModalView(
                 isPresented: $showResetModal,
@@ -191,27 +191,28 @@ struct ArrestView: View {
             )
         }
         .sheet(item: $drugToLog) { drug in
-                    DosageEntryModal(
-                        drug: drug,
-                        amiodaroneDoseCount: viewModel.amiodaroneCount,
-                        patientAgeStr: $viewModel.patientAgeStr
-                    ) { dosage, ageCategory in
-                        if let age = ageCategory {
-                            viewModel.setPatientAgeCategory(age)
-                        }
-                        
-                        switch drug {
-                        case .adrenaline:
-                            viewModel.logAdrenaline(with: dosage)
-                        case .amiodarone:
-                            viewModel.logAmiodarone(with: dosage)
-                        case .lidocaine:
-                            viewModel.logLidocaine(with: dosage)
-                        case .other(let name):
-                            viewModel.logOtherDrug(name, with: dosage)
-                        }
-                    }
+            DosageEntryModal(
+                drug: drug,
+                amiodaroneDoseCount: viewModel.amiodaroneCount,
+                patientAgeStr: $viewModel.patientAgeStr,
+                initialAgeCategory: viewModel.patientAgeCategory
+            ) { dosage, ageCategory in
+                if let age = ageCategory {
+                    viewModel.setPatientAgeCategory(age)
                 }
+                
+                switch drug {
+                case .adrenaline:
+                    viewModel.logAdrenaline(with: dosage)
+                case .amiodarone:
+                    viewModel.logAmiodarone(with: dosage)
+                case .lidocaine:
+                    viewModel.logLidocaine(with: dosage)
+                case .other(let name):
+                    viewModel.logOtherDrug(name, with: dosage)
+                }
+            }
+        }
         .alert(
             "Confirm Dosage",
             isPresented: Binding(
