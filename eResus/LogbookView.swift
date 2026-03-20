@@ -118,20 +118,24 @@ struct LogbookView: View {
             }
             .navigationTitle("Logbook")
             .sheet(item: $selectedLog) { log in
-                            // Standard Summary View
-                            SummaryView(
-                                events: Array(log.events),
-                                totalTime: log.totalDuration,
-                                startTime: log.startTime,
-                                shockCount: log.shockCount,
-                                adrenalineCount: log.adrenalineCount,
-                                amiodaroneCount: log.amiodaroneCount,
-                                lidocaineCount: 0,
-                                roscTime: log.roscTime,
-                                patientAge: log.patientAge,
-                                patientGender: log.patientGender
-                            )
-                        }
+                
+                // Dynamically calculate Lidocaine given during this specific arrest
+                let lidoCount = log.events.filter { $0.message.contains("Lidocaine") && $0.message.contains("Given") }.count
+                
+                // Standard Summary View
+                SummaryView(
+                    events: Array(log.events),
+                    totalTime: log.totalDuration,
+                    startTime: log.startTime,
+                    shockCount: log.shockCount,
+                    adrenalineCount: log.adrenalineCount,
+                    amiodaroneCount: log.amiodaroneCount,
+                    lidocaineCount: lidoCount, // Dynamically parsed!
+                    roscTime: log.roscTime,
+                    patientAge: log.patientAge,
+                    patientGender: log.patientGender
+                )
+            }
             .sheet(item: $logToEdit) { log in
                 // NEW: Research Demographic Edit View
                 EditLogPatientInfoView(log: log)
