@@ -7,12 +7,15 @@ import SwiftUI
 import AuthenticationServices
 import CryptoKit
 import FirebaseAuth
+import FirebaseCore
+import GoogleSignIn
+import SwiftData
 
 struct AuthView: View {
     @StateObject private var firebaseManager = FirebaseManager.shared
+    @Environment(\.modelContext) private var modelContext
     @State private var currentNonce: String?
     
-    // Email / Password States
     @State private var email = ""
     @State private var password = ""
     @State private var errorMessage = ""
@@ -22,7 +25,6 @@ struct AuthView: View {
         ScrollView {
             VStack(spacing: 24) {
                 if firebaseManager.isAuthenticated, let userEmail = firebaseManager.currentUserEmail {
-                    // MARK: - Logged In State
                     Image(systemName: "person.crop.circle.fill.badge.checkmark")
                         .font(.system(size: 80))
                         .foregroundColor(.green)
@@ -38,13 +40,11 @@ struct AuthView: View {
                     Button("Sign Out") {
                         firebaseManager.signOut()
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.bordered)
                     .tint(.red)
-                    .controlSize(.large)
-                    .padding(.top, 20)
+                    .padding(.top, 15)
                     
                 } else {
-                    // MARK: - Logged Out State
                     Image(systemName: "person.circle")
                         .font(.system(size: 80))
                         .foregroundColor(.blue)
@@ -67,7 +67,6 @@ struct AuthView: View {
                             .padding(.horizontal)
                     }
                     
-                    // Email & Password Fields
                     VStack(spacing: 16) {
                         TextField("Email Address", text: $email)
                             .keyboardType(.emailAddress)
@@ -86,19 +85,15 @@ struct AuthView: View {
                                 .padding()
                         } else {
                             HStack(spacing: 16) {
-                                Button("Sign In") {
-                                    handleEmailSignIn()
-                                }
-                                .frame(maxWidth: .infinity)
-                                .buttonStyle(.borderedProminent)
-                                .controlSize(.large)
+                                Button("Sign In") { handleEmailLogin(isSignUp: false) }
+                                    .frame(maxWidth: .infinity)
+                                    .buttonStyle(.borderedProminent)
+                                    .controlSize(.large)
                                 
-                                Button("Create Account") {
-                                    handleEmailSignUp()
-                                }
-                                .frame(maxWidth: .infinity)
-                                .buttonStyle(.bordered)
-                                .controlSize(.large)
+                                Button("Create") { handleEmailLogin(isSignUp: true) }
+                                    .frame(maxWidth: .infinity)
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.large)
                             }
                         }
                     }
@@ -112,31 +107,52 @@ struct AuthView: View {
                     .padding(.horizontal)
                     .padding(.vertical, 8)
                     
-                    // Native Apple Sign-In Button
-                    SignInWithAppleButton(
-                        onRequest: { request in
-                            let nonce = randomNonceString()
-                            currentNonce = nonce
-                            request.requestedScopes = [.fullName, .email]
-                            request.nonce = sha256(nonce)
-                        },
-                        onCompletion: { result in
-                            handleAppleSignIn(result: result)
+                    VStack(spacing: 16) {
+                        // Native Apple Sign-In
+                        SignInWithAppleButton(
+                            onRequest: { request in
+                                let nonce = randomNonceString()
+                                currentNonce = nonce
+                                request.requestedScopes = [.fullName, .email]
+                                request.nonce = sha256(nonce)
+                            },
+                            onCompletion: { result in
+                                handleAppleSignIn(result: result)
+                            }
+                        )
+                        .signInWithAppleButtonStyle(AppSettings.appearanceMode == .dark ? .white : .black)
+                        .frame(height: 50)
+                        
+                        // Google Sign-In
+                        Button(action: handleGoogleSignIn) {
+                            HStack {
+                                Image(systemName: "g.circle.fill")
+                                Text("Sign in with Google")
+                                    .fontWeight(.semibold)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 50)
+                            .background(Color(UIColor.secondarySystemBackground))
+                            .foregroundColor(.primary)
+                            .cornerRadius(8)
                         }
-                    )
-                    .signInWithAppleButtonStyle(AppSettings.appearanceMode == .dark ? .white : .black)
-                    .frame(height: 50)
-                    .cornerRadius(8)
+                    }
                     .padding(.horizontal)
                 }
             }
             .padding()
         }
         .navigationTitle(firebaseManager.isAuthenticated ? "Account" : "Sign In")
+        // Triggers silent sync down immediately on sign-in
+        .onChange(of: firebaseManager.isAuthenticated) { authenticated in
+            if authenticated {
+                firebaseManager.downloadLogs(to: modelContext)
+            }
+        }
     }
     
-    // MARK: - Email Auth Handlers
-    private func handleEmailSignIn() {
+    // MARK: - Email Auth
+    private func handleEmailLogin(isSignUp: Bool) {
         guard !email.isEmpty, !password.isEmpty else {
             errorMessage = "Please enter both email and password."
             return
@@ -144,26 +160,15 @@ struct AuthView: View {
         isLoading = true
         errorMessage = ""
         
-        firebaseManager.signInWithEmail(email: email, password: password) { error in
-            isLoading = false
-            if let error = error {
-                errorMessage = error.localizedDescription
+        if isSignUp {
+            Auth.auth().createUser(withEmail: email, password: password) { result, error in
+                isLoading = false
+                if let error = error { self.errorMessage = error.localizedDescription }
             }
-        }
-    }
-    
-    private func handleEmailSignUp() {
-        guard !email.isEmpty, !password.isEmpty else {
-            errorMessage = "Please enter an email and a password to create an account."
-            return
-        }
-        isLoading = true
-        errorMessage = ""
-        
-        firebaseManager.signUpWithEmail(email: email, password: password) { error in
-            isLoading = false
-            if let error = error {
-                errorMessage = error.localizedDescription
+        } else {
+            Auth.auth().signIn(withEmail: email, password: password) { result, error in
+                isLoading = false
+                if let error = error { self.errorMessage = error.localizedDescription }
             }
         }
     }
@@ -173,24 +178,44 @@ struct AuthView: View {
         switch result {
         case .success(let authorization):
             if let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential {
-                guard let nonce = currentNonce else { return }
-                guard let appleIDToken = appleIDCredential.identityToken else { return }
-                guard let idTokenString = String(data: appleIDToken, encoding: .utf8) else { return }
+                guard let nonce = currentNonce,
+                      let appleIDToken = appleIDCredential.identityToken,
+                      let idTokenString = String(data: appleIDToken, encoding: .utf8) else { return }
                 
-                let credential = OAuthProvider.appleCredential(
-                    withIDToken: idTokenString,
-                    rawNonce: nonce,
-                    fullName: appleIDCredential.fullName
-                )
-                
-                Auth.auth().signIn(with: credential) { authResult, error in
-                    if let error = error {
-                        errorMessage = error.localizedDescription
-                    }
+                let credential = OAuthProvider.appleCredential(withIDToken: idTokenString, rawNonce: nonce, fullName: appleIDCredential.fullName)
+                firebaseManager.authenticate(with: credential) { error in
+                    if let error = error { self.errorMessage = error.localizedDescription }
                 }
             }
         case .failure(let error):
             errorMessage = error.localizedDescription
+        }
+    }
+    
+    // MARK: - Google Sign-In Callback handler
+    private func handleGoogleSignIn() {
+        guard let clientID = FirebaseApp.app()?.options.clientID else { return }
+        
+        let config = GIDConfiguration(clientID: clientID)
+        GIDSignIn.sharedInstance.configuration = config
+        
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = windowScene.windows.first,
+              let rootVC = window.rootViewController else { return }
+        
+        GIDSignIn.sharedInstance.signIn(withPresenting: rootVC) { result, error in
+            if let error = error {
+                self.errorMessage = error.localizedDescription
+                return
+            }
+            
+            guard let user = result?.user, let idToken = user.idToken?.tokenString else { return }
+            
+            let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: user.accessToken.tokenString)
+            
+            firebaseManager.authenticate(with: credential) { authError in
+                if let authError = authError { self.errorMessage = authError.localizedDescription }
+            }
         }
     }
     

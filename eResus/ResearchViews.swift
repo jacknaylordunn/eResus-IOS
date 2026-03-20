@@ -32,9 +32,26 @@ struct PatientInfoPromptView: View {
             }
             .navigationTitle("Patient Info")
             .navigationBarItems(trailing: Button("Save") {
+                // Auto-evaluate the age string into the correct enum for Drug Dosages!
+                if let ageInt = Int(viewModel.patientAgeStr.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                    if ageInt < 1 {
+                        if let infantCase = PatientAgeCategory.allCases.first(where: { $0.rawValue.lowercased().contains("infant") }) {
+                            viewModel.patientAgeCategory = infantCase
+                        }
+                    } else if ageInt <= 18 {
+                        if let childCase = PatientAgeCategory.allCases.first(where: { $0.rawValue.lowercased().contains("child") }) {
+                            viewModel.patientAgeCategory = childCase
+                        }
+                    } else {
+                        if let adultCase = PatientAgeCategory.allCases.first(where: { $0.rawValue.lowercased().contains("adult") }) {
+                            viewModel.patientAgeCategory = adultCase
+                        }
+                    }
+                }
                 dismiss()
             })
         }
+        .presentationDetents([.medium]) // Makes it a half-screen modal
     }
 }
 
@@ -59,7 +76,7 @@ struct ResearchConsentView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
             
-            // NEW: Embedded Data Policy Hyperlink
+            // Embedded Data Policy Hyperlink
             Link("Read the Data Collection Policy & Agreement", destination: URL(string: "https://tech.aegismedicalsolutions.co.uk/eresus/data-policy")!)
                 .font(.footnote)
                 .foregroundColor(.blue)
@@ -72,7 +89,6 @@ struct ResearchConsentView: View {
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 4)
                 
-                // NEW: Dynamic Picker
                 Picker("Ambulance Trust / Organisation", selection: $orgName) {
                     ForEach(firebaseManager.availableOrganizations, id: \.self) { org in
                         Text(org).tag(org)

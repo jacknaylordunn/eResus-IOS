@@ -27,23 +27,31 @@ struct SettingsView: View {
                 // MARK: - Account & Sync Section
                 Section(header: Text("Account & Sync")) {
                     NavigationLink(destination: AuthView()) {
-                        Text("Sign In / Account Profile")
+                        Text(firebaseManager.isAuthenticated ? "Account Profile" : "Sign In")
                     }
                 }
                 
                 // MARK: - Research Section
                 Section(header: Text("Research & Data"), footer: Text("When enrolled, eResus securely uploads anonymised logs to help improve cardiac arrest outcomes.")) {
                     Toggle("Enroll in Research", isOn: $researchModeEnabled)
+                        .onChange(of: researchModeEnabled) { _ in
+                            firebaseManager.syncSettingsToCloud()
+                        }
                     
                     if researchModeEnabled {
-                        // NEW: Dynamic Picker inside Settings
                         Picker("Organization / Trust", selection: $userOrganization) {
                             ForEach(firebaseManager.availableOrganizations, id: \.self) { org in
                                 Text(org).tag(org)
                             }
                         }
+                        .onChange(of: userOrganization) { _ in
+                            firebaseManager.syncSettingsToCloud()
+                        }
                     } else {
                         Toggle("Ask for Patient Info Locally", isOn: $askForPatientInfo)
+                            .onChange(of: askForPatientInfo) { _ in
+                                firebaseManager.syncSettingsToCloud()
+                            }
                     }
                     
                     Link("View Data Policy", destination: URL(string: "https://tech.aegismedicalsolutions.co.uk/eresus/data-policy")!)
@@ -71,14 +79,24 @@ struct SettingsView: View {
                     }
                     .pickerStyle(.segmented)
                 }
+                
+                // MARK: - Developer Footer
+                Section {
+                    EmptyView()
+                } footer: {
+                    VStack(spacing: 6) {
+                        Text("eResus is developed and maintained by")
+                        Link("Aegis Medical Solutions", destination: URL(string: "https://tech.aegismedicalsolutions.co.uk")!)
+                            .foregroundColor(.blue)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 10)
+                }
             }
             .navigationTitle("Settings")
         }
         .onAppear {
-            // Guarantee "Independent / None" shows by default instead of a blank menu
-            if userOrganization.isEmpty {
-                userOrganization = "Independent / None"
-            }
+            if userOrganization.isEmpty { userOrganization = "Independent / None" }
             firebaseManager.fetchOrganizations()
         }
     }

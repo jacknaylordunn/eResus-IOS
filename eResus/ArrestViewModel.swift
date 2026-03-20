@@ -33,12 +33,14 @@ class ArrestViewModel: ObservableObject {
     @Published var lidocaineCount = 0
     
     @Published var hideAdrenalinePrompt: Bool = false
+    @Published var hideAdrenalineDueWarning: Bool = false // NEW: Swipe dismiss for Adrenaline Due
     @Published var hideAmiodaronePrompt: Bool = false
     @Published var lastRhythmNonShockable: Bool = false
     @Published var airwayAdjunct: AirwayAdjunctType? = nil
     @Published var roscTime: TimeInterval? = nil
     
     @Published var airwayPlaced = false
+    @Published var vascularAccessPlaced = false
     @Published var antiarrhythmicGiven: AntiarrhythmicDrug = .none
     
     @Published var reversibleCauses: [ChecklistItem] = AppConstants.reversibleCausesTemplate
@@ -47,9 +49,18 @@ class ArrestViewModel: ObservableObject {
     @Published var nlsPretermTasks: [ChecklistItem] = AppConstants.nlsPretermTasksTemplate
     @Published var patientAgeCategory: PatientAgeCategory?
     
+    // VOD State
+    @Published var vodConfirmed = false
+    @Published var vodTasks: [ChecklistItem] = [
+        ChecklistItem(name: "**A/B:** Apnoea / Absent Breathing"),
+        ChecklistItem(name: "**C:** Absent Circulation (Pulse/Heart sounds)"),
+        ChecklistItem(name: "**D:** Disability (Unresponsive / GCS 3)"),
+        ChecklistItem(name: "**E:** 5 mins continuous asystole on ECG")
+    ]
+    
     @Published var isTimerPaused: Bool = false
     
-    // NEW: Research Variables
+    // Research Variables
     @Published var patientAgeStr: String = ""
     @Published var patientGenderStr: String = ""
     @Published var initialRhythm: String? = nil
@@ -62,8 +73,6 @@ class ArrestViewModel: ObservableObject {
     private var lastAdrenalineTime: TimeInterval?
     private var shockCountForAmiodarone1: Int?
     private var undoHistory: [UndoState] = []
-    
-    // Used to calculate paused duration correctly
     private var pauseStartTime: Date?
 
     init(modelContext: ModelContext) {
@@ -79,14 +88,13 @@ class ArrestViewModel: ObservableObject {
         reversibleCauses.first(where: { $0.name == "Hypothermia" })?.hypothermiaStatus != .severe
     }
 
+    // Buttons are unblocked, but mutual exclusion is maintained
     var isAmiodaroneAvailable: Bool {
-        let isEligibleShockCount = (shockCount >= 3 && amiodaroneCount == 0) || (shockCount >= 5 && amiodaroneCount == 1)
-        return isEligibleShockCount && antiarrhythmicGiven != .lidocaine && isAdrenalineAvailable
+        return antiarrhythmicGiven != .lidocaine && isAdrenalineAvailable
     }
 
     var isLidocaineAvailable: Bool {
-        let isEligibleShockCount = (shockCount >= 3 && lidocaineCount == 0) || (shockCount >= 5 && lidocaineCount == 1)
-        return isEligibleShockCount && antiarrhythmicGiven != .amiodarone
+        return antiarrhythmicGiven != .amiodarone
     }
     
     var timeUntilAdrenaline: TimeInterval? {
@@ -97,29 +105,24 @@ class ArrestViewModel: ObservableObject {
         return interval - timeSince
     }
 
-    var shouldShowAmiodaroneReminder: Bool {
-        guard let shockCountDose1 = shockCountForAmiodarone1 else { return false }
-        return amiodaroneCount == 1 && shockCount >= shockCountDose1 + 2 && !hideAmiodaronePrompt
-    }
-    
     var shouldShowAmiodaroneFirstDosePrompt: Bool {
-        return isAmiodaroneAvailable && amiodaroneCount == 0 && !hideAmiodaronePrompt
+        // STRICT LOGIC: Banner only shows after 3rd shock
+        return shockCount >= 3 && amiodaroneCount == 0 && !hideAmiodaronePrompt && antiarrhythmicGiven != .lidocaine && isAdrenalineAvailable
+    }
+
+    var shouldShowAmiodaroneReminder: Bool {
+        // STRICT LOGIC: Banner only shows 2 shocks AFTER the 1st dose was logged
+        guard let shockCountDose1 = shockCountForAmiodarone1 else { return false }
+        return amiodaroneCount == 1 && shockCount >= (shockCountDose1 + 2) && !hideAmiodaronePrompt
     }
     
     var shouldShowAdrenalinePrompt: Bool {
         guard isAdrenalineAvailable && !hideAdrenalinePrompt else { return false }
-        
-        // 1. Don't show the "Consider" prompt if the timer is already showing the critical "Due" warning
-        if let timeUntil = timeUntilAdrenaline, timeUntil <= 0 {
-            return false
-        }
-        
-        // 2. Initial dose logic
+        if let timeUntil = timeUntilAdrenaline, timeUntil <= 0 { return false }
         if adrenalineCount == 0 {
             if shockCount >= 3 { return true }
             if lastRhythmNonShockable { return true }
         }
-        
         return false
     }
     
@@ -128,7 +131,6 @@ class ArrestViewModel: ObservableObject {
         stopTimer()
         cprCycleStartTime = totalArrestTime
         
-        // Schedule timer on common run loop to prevent pausing during UI interaction
         let newTimer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.tick()
         }
@@ -153,7 +155,6 @@ class ArrestViewModel: ObservableObject {
         saveUndoState()
         isTimerPaused = false
         if let pauseStart = pauseStartTime, let start = startTime {
-            // Offset the startTime by the amount of time we were paused
             let pausedDuration = Date().timeIntervalSince(pauseStart)
             startTime = start.addingTimeInterval(pausedDuration)
         }
@@ -168,28 +169,17 @@ class ArrestViewModel: ObservableObject {
         Task { @MainActor in
             self.masterTime = Date().timeIntervalSince(startTime)
             
-            // Only update CPR time if arrest is active and we are not analyzing/shocking
             if self.arrestState == .active && self.uiState == .default {
                 let oldCprTime = self.cprTime
                 let cycleDuration = self.arrestType == .general ? AppSettings.cprCycleDuration : self.nlsCycleDuration
                 
                 self.cprTime = cycleDuration - (self.totalArrestTime - self.cprCycleStartTime)
 
-                // Haptic for last 10 seconds
-                if self.cprTime <= 10 && self.cprTime > 0 {
-                    HapticManager.shared.impact(style: .light)
-                }
+                if self.cprTime <= 10 && self.cprTime > 0 { HapticManager.shared.impact(style: .light) }
+                if oldCprTime > 0 && self.cprTime <= 0 { HapticManager.shared.notification(type: .warning) }
+                if self.cprTime <= 0 && !self.isRhythmCheckDue { self.isRhythmCheckDue = true }
                 
-                // Haptic for cycle end
-                if oldCprTime > 0 && self.cprTime <= 0 {
-                    HapticManager.shared.notification(type: .warning)
-                }
-                
-                if self.cprTime <= 0 && !self.isRhythmCheckDue {
-                    self.isRhythmCheckDue = true
-                }
-                
-                if self.cprTime < -0.9 { // Add tolerance for timer drift
+                if self.cprTime < -0.9 {
                     self.cprCycleStartTime = self.totalArrestTime
                     self.cprTime = cycleDuration
                 }
@@ -205,7 +195,7 @@ class ArrestViewModel: ObservableObject {
         pauseStartTime = nil
         arrestType = .general
         arrestState = .active
-        initialRhythm = nil // Reset
+        initialRhythm = nil
         logEvent("Arrest Started at \(Date().formatted(date: .omitted, time: .standard))", type: .status)
         startTimer()
         
@@ -221,7 +211,7 @@ class ArrestViewModel: ObservableObject {
         pauseStartTime = nil
         arrestType = .newborn
         self.isPreterm = isPreterm
-        self.patientAgeCategory = .atBirth // Set default age category for dosage logic
+        self.patientAgeCategory = .atBirth
         self.patientAgeStr = "Newborn"
         arrestState = .active
         nlsState = .initialAssessment
@@ -251,11 +241,7 @@ class ArrestViewModel: ObservableObject {
     
     func logRhythm(_ rhythm: String, isShockable: Bool) {
         saveUndoState()
-        
-        if initialRhythm == nil {
-            initialRhythm = rhythm
-        }
-        
+        if initialRhythm == nil { initialRhythm = rhythm }
         logEvent("Rhythm is \(rhythm)", type: .rhythm)
         lastRhythmNonShockable = !isShockable
         if !isShockable { hideAdrenalinePrompt = false }
@@ -291,15 +277,14 @@ class ArrestViewModel: ObservableObject {
         let dosageText = (AppSettings.showDosagePrompts && dosage != nil) ? " (\(dosage!))" : ""
         logEvent("Adrenaline\(dosageText) Given - Dose \(adrenalineCount)", type: .drug)
         hideAdrenalinePrompt = false
+        hideAdrenalineDueWarning = false // Reset swipe dismiss!
     }
     
     func logAmiodarone(with dosage: String? = nil) {
         saveUndoState()
         amiodaroneCount += 1
         antiarrhythmicGiven = .amiodarone
-        if amiodaroneCount == 1 {
-            shockCountForAmiodarone1 = shockCount
-        }
+        if amiodaroneCount == 1 { shockCountForAmiodarone1 = shockCount }
         let dosageText = (AppSettings.showDosagePrompts && dosage != nil) ? " (\(dosage!))" : ""
         logEvent("Amiodarone\(dosageText) Given - Dose \(amiodaroneCount)", type: .drug)
         hideAmiodaronePrompt = false
@@ -337,6 +322,19 @@ class ArrestViewModel: ObservableObject {
         logEvent("Advanced Airway Placed - \(type.displayName)", type: .airway)
     }
     
+    func logVascularAccess(type: String, location: String, gauge: String, successful: Bool) {
+        saveUndoState()
+        if successful { vascularAccessPlaced = true }
+        let status = successful ? "Successful" : "Unsuccessful"
+        
+        var details = [String]()
+        if !location.isEmpty { details.append(location) }
+        if !gauge.isEmpty { details.append(gauge) }
+        let detailsStr = details.isEmpty ? "" : " (\(details.joined(separator: ", ")))"
+        
+        logEvent("\(type) Access\(detailsStr) - \(status)", type: .status)
+    }
+    
     func logEtco2(_ value: String) {
         saveUndoState()
         if let number = Int(value), number > 0 {
@@ -358,7 +356,14 @@ class ArrestViewModel: ObservableObject {
         arrestState = .ended
         isTimerPaused = false
         stopTimer()
-        logEvent(arrestType == .newborn ? "Resuscitation Ended" : "Arrest Ended (Patient Deceased)", type: .status)
+        logEvent(arrestType == .newborn ? "Resuscitation Ended" : "Termination of Resuscitation (TOR)", type: .status)
+    }
+    
+    // Verification of Death
+    func logVOD() {
+        saveUndoState()
+        vodConfirmed = true
+        logEvent("Verification of Death (VOD) Confirmed", type: .status)
     }
     
     func reArrest() {
@@ -367,7 +372,6 @@ class ArrestViewModel: ObservableObject {
         cprCycleStartTime = totalArrestTime
         
         if arrestType == .newborn {
-            // Once a newborn achieves ROSC and re-arrests, transition to Paediatric ALS automatically
             arrestType = .general
             cprTime = AppSettings.cprCycleDuration
             logEvent("Baby Stopped Breathing. Transitioning to Paediatric ALS.", type: .status)
@@ -375,10 +379,7 @@ class ArrestViewModel: ObservableObject {
             cprTime = AppSettings.cprCycleDuration
             logEvent("Patient Re-Arrested. CPR Resumed.", type: .status)
         }
-        
-        if !isTimerPaused {
-            startTimer()
-        }
+        if !isTimerPaused { startTimer() }
     }
 
     func addTimeOffset(_ seconds: TimeInterval) {
@@ -426,31 +427,18 @@ class ArrestViewModel: ObservableObject {
             nlsCycleDuration = 60
             logEvent("Returned to Initial Assessment", type: .status)
         case .inflationBreaths:
-            cprTime = 30
-            nlsCycleDuration = 30
-            logEvent("Moved to Airway & Inflation Breaths", type: .airway)
+            cprTime = 30; nlsCycleDuration = 30; logEvent("Moved to Airway & Inflation Breaths", type: .airway)
         case .optimiseAirway:
-            cprTime = 30
-            nlsCycleDuration = 30
-            logEvent("Moved to Optimise Airway Troubleshooting", type: .airway)
+            cprTime = 30; nlsCycleDuration = 30; logEvent("Moved to Optimise Airway Troubleshooting", type: .airway)
         case .advancedAirway:
-            cprTime = 30
-            nlsCycleDuration = 30
-            logEvent("Moved to Advanced Airway interventions", type: .airway)
+            cprTime = 30; nlsCycleDuration = 30; logEvent("Moved to Advanced Airway interventions", type: .airway)
         case .ventilation:
-            cprTime = 30
-            nlsCycleDuration = 30
-            logEvent("Started Ventilation Breaths (30/min)", type: .airway)
+            cprTime = 30; nlsCycleDuration = 30; logEvent("Started Ventilation Breaths (30/min)", type: .airway)
         case .continueVentilation:
-            cprTime = 30
-            nlsCycleDuration = 30
-            logEvent("Continuing Ventilation (HR ≥ 60)", type: .airway)
+            cprTime = 30; nlsCycleDuration = 30; logEvent("Continuing Ventilation (HR ≥ 60)", type: .airway)
         case .compressions:
-            cprTime = 30
-            nlsCycleDuration = 30
-            logEvent("Started Chest Compressions (3:1 Ratio, 100% O2)", type: .cpr)
+            cprTime = 30; nlsCycleDuration = 30; logEvent("Started Chest Compressions (3:1 Ratio, 100% O2)", type: .cpr)
         }
-        
         cprCycleStartTime = totalArrestTime
     }
     
@@ -499,7 +487,7 @@ class ArrestViewModel: ObservableObject {
         stopTimer()
         applyState(state)
         logEvent("Session Transferred from another device", type: .status)
-        undoHistory.removeAll() // Start fresh
+        undoHistory.removeAll()
     }
     
     private func applyState(_ state: UndoState) {
@@ -531,19 +519,25 @@ class ArrestViewModel: ObservableObject {
             startTime = state.startTime
             uiState = state.uiState
             patientAgeCategory = state.patientAgeCategory
-            
             hideAdrenalinePrompt = state.hideAdrenalinePrompt ?? false
             hideAmiodaronePrompt = state.hideAmiodaronePrompt ?? false
             lastRhythmNonShockable = state.lastRhythmNonShockable ?? false
             airwayAdjunct = state.airwayAdjunct
             roscTime = state.roscTime
-            
             isTimerPaused = state.isTimerPaused ?? false
             pauseStartTime = state.pauseStartTime
-            
             initialRhythm = state.initialRhythm
             patientAgeStr = state.patientAgeStr ?? ""
             patientGenderStr = state.patientGenderStr ?? ""
+            
+            vascularAccessPlaced = events.contains { $0.message.contains("Access") && $0.message.contains("Successful") }
+            vodConfirmed = events.contains { $0.message.contains("Verification of Death") }
+            
+            if vodConfirmed {
+                vodTasks.indices.forEach { vodTasks[$0].isCompleted = true }
+            } else {
+                vodTasks.indices.forEach { vodTasks[$0].isCompleted = false }
+            }
             
             if (arrestState == .active || arrestState == .rosc) && !isTimerPaused && timer == nil {
                 startTimer()
@@ -558,9 +552,6 @@ class ArrestViewModel: ObservableObject {
     func performReset(shouldSaveLog: Bool, shouldCopy: Bool) {
         if shouldSaveLog && startTime != nil {
             saveLogToDatabase()
-        }
-        if shouldCopy {
-            copySummaryToClipboard()
         }
         
         stopTimer()
@@ -580,6 +571,7 @@ class ArrestViewModel: ObservableObject {
         amiodaroneCount = 0
         lidocaineCount = 0
         airwayPlaced = false
+        vascularAccessPlaced = false
         antiarrhythmicGiven = .none
         lastAdrenalineTime = nil
         shockCountForAmiodarone1 = nil
@@ -592,17 +584,19 @@ class ArrestViewModel: ObservableObject {
         postROSCTasks = AppConstants.postROSCTasksTemplate
         postMortemTasks = AppConstants.postMortemTasksTemplate
         nlsPretermTasks = AppConstants.nlsPretermTasksTemplate
-        
         hideAdrenalinePrompt = false
         hideAmiodaronePrompt = false
+        hideAdrenalineDueWarning = false
         lastRhythmNonShockable = false
         airwayAdjunct = nil
         roscTime = nil
-        
         patientAgeStr = ""
         patientGenderStr = ""
         initialRhythm = nil
         showPatientInfoPrompt = false
+        
+        vodConfirmed = false
+        vodTasks.indices.forEach { vodTasks[$0].isCompleted = false }
     }
     
     private func saveLogToDatabase() {
@@ -637,62 +631,37 @@ class ArrestViewModel: ObservableObject {
             newEvent.log = newLog
             modelContext.insert(newEvent)
         }
-        
         try? modelContext.save()
         
-        // Push to Firebase if enrolled
         if AppSettings.researchModeEnabled {
             FirebaseManager.shared.uploadLog(newLog, events: events)
             newLog.isSynced = true
         }
     }
     
-    // SAFETY NET: Sweep the database for any logs that weren't synced to Firebase previously
     func syncOfflineLogs() {
         guard AppSettings.researchModeEnabled else { return }
-        
         let descriptor = FetchDescriptor<SavedArrestLog>(predicate: #Predicate { $0.isSynced == false })
-        
         do {
             let unsyncedLogs = try modelContext.fetch(descriptor)
             for log in unsyncedLogs {
-                // Upload will automatically substitute "Unknown" for old logs missing demographics
                 FirebaseManager.shared.uploadLog(log, events: log.events)
                 log.isSynced = true
             }
             try modelContext.save()
         } catch {
-            print("Failed to sweep and sync offline logs: \(error.localizedDescription)")
+            print("Failed to sweep offline logs: \(error.localizedDescription)")
         }
-    }
-    
-    private func copySummaryToClipboard() {
-        let shocks = shockCount
-        let adCount = adrenalineCount
-        let amioCount = amiodaroneCount
-        let lidocaineCount = lidocaineCount
-        let roscText: String
-        if let roscTime = roscTime {
-            roscText = "ROSC at: \(TimeFormatter.format(roscTime)) (from start)"
-        } else {
-            roscText = "ROSC: Not achieved"
-        }
-        let startText = startTime != nil ? DateFormatter.localizedString(from: startTime!, dateStyle: .none, timeStyle: .short) : "Unknown"
-        let header = """
-        eResus Event Summary
-        Start Time (clock): \(startText)
-        Total Arrest Time: \(TimeFormatter.format(totalArrestTime))
-        Shocks: \(shocks)  |  Adrenaline: \(adCount)  |  Amiodarone: \(amioCount)  |  Lidocaine: \(lidocaineCount)
-        \(roscText)
-        """
-        let log = events.sorted(by: { $0.timestamp < $1.timestamp }).map { "[\(TimeFormatter.format($0.timestamp))] \($0.message)" }.joined(separator: "\n")
-        let summaryText = header + "\n\n--- Event Log ---\n" + log
-        UIPasteboard.general.string = summaryText
-        HapticManager.shared.notification(type: .success)
     }
     
     private func logEvent(_ message: String, type: EventType) {
-        let newEvent = Event(timestamp: totalArrestTime, message: message, type: type)
+        let timestamp: TimeInterval
+        if let start = startTime, arrestState == .ended {
+            timestamp = Date().timeIntervalSince(start) + timeOffset
+        } else {
+            timestamp = totalArrestTime
+        }
+        let newEvent = Event(timestamp: timestamp, message: message, type: type)
         events.insert(newEvent, at: 0)
         HapticManager.shared.impact()
     }

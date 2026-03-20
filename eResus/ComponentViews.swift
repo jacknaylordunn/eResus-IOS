@@ -333,12 +333,15 @@ struct ActiveArrestContentView: View {
     @Binding var showHypothermiaModal: Bool
     @Binding var pdfToShow: PDFIdentifiable?
     @Binding var showAirwayAdjunctModal: Bool
+    @Binding var showVascularModal: Bool
+    @Binding var showTORModal: Bool
+    @Binding var airwaySuccess: Bool
+    @Binding var vascularSuccess: Bool
     
     let onLogAdrenaline: () -> Void
     let onLogAmiodarone: () -> Void
     let onLogLidocaine: () -> Void
     
-    // NEW: Transfer Modals for ActiveArrestContentView
     @State private var showTransferModal = false
     @State private var showQRScanner = false
     @State private var scannedCode: String? = nil
@@ -356,8 +359,11 @@ struct ActiveArrestContentView: View {
                 if let timeUntilAdrenaline = viewModel.timeUntilAdrenaline {
                     if timeUntilAdrenaline > 0 {
                         AdrenalineTimerView(timeRemaining: timeUntilAdrenaline)
-                    } else {
-                        AdrenalineDueWarning(action: onLogAdrenaline)
+                    } else if !viewModel.hideAdrenalineDueWarning {
+                        AdrenalineDueWarning(
+                            action: onLogAdrenaline,
+                            onDismiss: { viewModel.hideAdrenalineDueWarning = true }
+                        )
                     }
                 }
                 
@@ -378,6 +384,10 @@ struct ActiveArrestContentView: View {
                     showOtherDrugsModal: $showOtherDrugsModal,
                     showEtco2Modal: $showEtco2Modal,
                     showAirwayAdjunctModal: $showAirwayAdjunctModal,
+                    showVascularModal: $showVascularModal,
+                    showTORModal: $showTORModal,
+                    airwaySuccess: $airwaySuccess,
+                    vascularSuccess: $vascularSuccess,
                     onLogAdrenaline: onLogAdrenaline,
                     onLogAmiodarone: onLogAmiodarone,
                     onLogLidocaine: onLogLidocaine
@@ -389,7 +399,7 @@ struct ActiveArrestContentView: View {
                 
                 EventLogView(events: viewModel.events)
                 
-                // MARK: - Transfer Arrest Button (At bottom of log)
+                // MARK: - Transfer Arrest Button
                 VStack(spacing: 12) {
                     Divider().padding(.horizontal)
                     
@@ -417,7 +427,6 @@ struct ActiveArrestContentView: View {
                 .padding(.vertical, 12)
             }
             .padding(.horizontal)
-            // Extra padding to clear the Bottom Controls
             .padding(.bottom, 200)
             .opacity(viewModel.isTimerPaused ? 0.5 : 1.0)
             .disabled(viewModel.isTimerPaused)
@@ -425,20 +434,12 @@ struct ActiveArrestContentView: View {
         .onAppear {
             metronome.mode = .general
         }
-        // Modals attached to the ScrollView
-        .sheet(isPresented: $showTransferModal) {
-            SessionTransferModal(viewModel: viewModel)
-        }
-        .fullScreenCover(isPresented: $showQRScanner) {
-            QRScannerView(scannedCode: $scannedCode)
-                .ignoresSafeArea()
-        }
+        .sheet(isPresented: $showTransferModal) { SessionTransferModal(viewModel: viewModel) }
+        .fullScreenCover(isPresented: $showQRScanner) { QRScannerView(scannedCode: $scannedCode).ignoresSafeArea() }
         .onChange(of: scannedCode) { newValue in
             if let code = newValue {
                 FirebaseManager.shared.fetchSessionTransfer(transferId: code) { state in
-                    if let state = state {
-                        viewModel.restoreFromTransfer(state: state)
-                    }
+                    if let state = state { viewModel.restoreFromTransfer(state: state) }
                 }
                 scannedCode = nil
             }
@@ -514,13 +515,16 @@ struct NewbornActiveArrestContentView: View {
     @Binding var showOtherDrugsModal: Bool
     @Binding var pdfToShow: PDFIdentifiable?
     @Binding var showAirwayAdjunctModal: Bool
+    @Binding var showVascularModal: Bool
+    @Binding var showTORModal: Bool
+    @Binding var airwaySuccess: Bool
+    @Binding var vascularSuccess: Bool
     
     let onLogAdrenaline: () -> Void
     
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                // Centered Top Timer Row without the Metronome
                 HStack {
                     Spacer()
                     NLSSquareTimerView(time: viewModel.cprTime, totalDuration: viewModel.nlsCycleDuration)
@@ -532,195 +536,60 @@ struct NewbornActiveArrestContentView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     switch viewModel.nlsState {
                     case .initialAssessment:
-                        WizardInstructionBlock(
-                            title: "Initial Assessment",
-                            primaryInstruction: "Assess tone, breathing and heart rate.",
-                            secondaryInstructions: viewModel.isPreterm ? [
-                                "Place undried body in a plastic bag + radiant heat.",
-                                "If breathing consider: CPAP 5–8 cm H₂O and ≥ 30% FiO₂.",
-                                "Ensure an open airway."
-                            ] : [
-                                "Delay cord clamping. Stimulate. Thermal care.",
-                                "Ensure an open airway."
-                            ]
-                        )
-                        
+                        WizardInstructionBlock(title: "Initial Assessment", primaryInstruction: "Assess tone, breathing and heart rate.", secondaryInstructions: viewModel.isPreterm ? ["Place undried body in a plastic bag + radiant heat.", "If breathing consider: CPAP 5–8 cm H₂O and ≥ 30% FiO₂.", "Ensure an open airway."] : ["Delay cord clamping. Stimulate. Thermal care.", "Ensure an open airway."])
                         WizardQuestionBlock(question: "Is the baby breathing adequately?")
-                        
                         Grid(horizontalSpacing: 12, verticalSpacing: 12) {
-                            GridRow {
-                                ActionButton(title: "No (Inadequate)", icon: "lungs.fill", backgroundColor: .blue, foregroundColor: .white) { viewModel.advanceNLS(to: .inflationBreaths) }
-                                ActionButton(title: "Yes (Adequate)", icon: "heart.fill", backgroundColor: .green, foregroundColor: .white) { viewModel.achieveROSC() }
-                            }
+                            GridRow { ActionButton(title: "No (Inadequate)", icon: "lungs.fill", backgroundColor: .blue, foregroundColor: .white) { viewModel.advanceNLS(to: .inflationBreaths) }; ActionButton(title: "Yes (Adequate)", icon: "heart.fill", backgroundColor: .green, foregroundColor: .white) { viewModel.achieveROSC() } }
                         }
 
                     case .inflationBreaths:
-                        WizardInstructionBlock(
-                            title: "Airway & Inflation Breaths",
-                            primaryInstruction: "Give 5 inflation breaths.",
-                            secondaryInstructions: viewModel.isPreterm ? [
-                                "Initial PIP 25 cm H₂O, PEEP 6 cm H₂O.",
-                                "≥ 30% FiO₂.",
-                                "SpO₂ +/- ECG monitoring."
-                            ] : [
-                                "30 cm H₂O, air (21%).",
-                                "PEEP 6 cm H₂O, if possible.",
-                                "SpO₂ +/- ECG monitoring."
-                            ]
-                        )
-                        
+                        WizardInstructionBlock(title: "Airway & Inflation Breaths", primaryInstruction: "Give 5 inflation breaths.", secondaryInstructions: viewModel.isPreterm ? ["Initial PIP 25 cm H₂O, PEEP 6 cm H₂O.", "≥ 30% FiO₂.", "SpO₂ +/- ECG monitoring."] : ["30 cm H₂O, air (21%).", "PEEP 6 cm H₂O, if possible.", "SpO₂ +/- ECG monitoring."])
                         WizardQuestionBlock(question: "Reassess heart rate and chest rise. Is the chest moving?")
-                        
                         Grid(horizontalSpacing: 12, verticalSpacing: 12) {
-                            GridRow {
-                                ActionButton(title: "Chest NOT Moving", icon: "exclamationmark.triangle", backgroundColor: .orange, foregroundColor: .white) {
-                                    viewModel.advanceNLS(to: .optimiseAirway)
-                                }
-                                ActionButton(title: "Chest Moving", icon: "lungs.fill", backgroundColor: .blue, foregroundColor: .white) {
-                                    viewModel.advanceNLS(to: .ventilation)
-                                }
-                            }
+                            GridRow { ActionButton(title: "Chest NOT Moving", icon: "exclamationmark.triangle", backgroundColor: .orange, foregroundColor: .white) { viewModel.advanceNLS(to: .optimiseAirway) }; ActionButton(title: "Chest Moving", icon: "lungs.fill", backgroundColor: .blue, foregroundColor: .white) { viewModel.advanceNLS(to: .ventilation) } }
                         }
                         
                     case .optimiseAirway:
-                        WizardInstructionBlock(
-                            title: "Troubleshoot Airway",
-                            primaryInstruction: "Troubleshoot airway and repeat 5 inflation breaths.",
-                            secondaryInstructions: [
-                                "Check mask, head and jaw position.",
-                                "2 person support."
-                            ]
-                        )
-                        
+                        WizardInstructionBlock(title: "Troubleshoot Airway", primaryInstruction: "Troubleshoot airway and repeat 5 inflation breaths.", secondaryInstructions: ["Check mask, head and jaw position.", "2 person support."])
                         WizardQuestionBlock(question: "Reassess heart rate and chest rise. Is the chest moving now?")
-                        
                         Grid(horizontalSpacing: 12, verticalSpacing: 12) {
-                            GridRow {
-                                ActionButton(title: "Chest NOT Moving", icon: "arrow.triangle.2.circlepath", backgroundColor: .orange, foregroundColor: .white) {
-                                    viewModel.advanceNLS(to: .advancedAirway)
-                                }
-                                ActionButton(title: "Chest Moving", icon: "lungs.fill", backgroundColor: .blue, foregroundColor: .white) {
-                                    viewModel.advanceNLS(to: .ventilation)
-                                }
-                            }
+                            GridRow { ActionButton(title: "Chest NOT Moving", icon: "arrow.triangle.2.circlepath", backgroundColor: .orange, foregroundColor: .white) { viewModel.advanceNLS(to: .advancedAirway) }; ActionButton(title: "Chest Moving", icon: "lungs.fill", backgroundColor: .blue, foregroundColor: .white) { viewModel.advanceNLS(to: .ventilation) } }
                         }
                         
                     case .advancedAirway:
-                        WizardInstructionBlock(
-                            title: "Advanced Airway",
-                            primaryInstruction: "Consider advanced airway interventions and repeat 5 inflation breaths.",
-                            secondaryInstructions: [
-                                "Consider: SGA, Suction, Tracheal tube.",
-                                "Consider increasing Inflation pressures."
-                            ]
-                        )
-                        
+                        WizardInstructionBlock(title: "Advanced Airway", primaryInstruction: "Consider advanced airway interventions and repeat 5 inflation breaths.", secondaryInstructions: ["Consider: SGA, Suction, Tracheal tube.", "Consider increasing Inflation pressures."])
                         WizardQuestionBlock(question: "Reassess heart rate and chest rise. Is the chest moving now?")
-                        
                         Grid(horizontalSpacing: 12, verticalSpacing: 12) {
-                            GridRow {
-                                ActionButton(title: "Chest NOT Moving", icon: "arrow.triangle.2.circlepath", backgroundColor: .orange, foregroundColor: .white) {
-                                    viewModel.logNLSAction("Chest still not moving. Advanced airway interventions continued.")
-                                    viewModel.resetNLSTimer()
-                                }
-                                ActionButton(title: "Chest Moving", icon: "lungs.fill", backgroundColor: .blue, foregroundColor: .white) {
-                                    viewModel.advanceNLS(to: .ventilation)
-                                }
-                            }
+                            GridRow { ActionButton(title: "Chest NOT Moving", icon: "arrow.triangle.2.circlepath", backgroundColor: .orange, foregroundColor: .white) { viewModel.logNLSAction("Chest still not moving. Advanced airway interventions continued."); viewModel.resetNLSTimer() }; ActionButton(title: "Chest Moving", icon: "lungs.fill", backgroundColor: .blue, foregroundColor: .white) { viewModel.advanceNLS(to: .ventilation) } }
                         }
 
                     case .ventilation:
-                        WizardInstructionBlock(
-                            title: "Ventilation",
-                            primaryInstruction: "Start ventilation breaths (30 min⁻¹).",
-                            secondaryInstructions: []
-                        )
-                        
+                        WizardInstructionBlock(title: "Ventilation", primaryInstruction: "Start ventilation breaths (30 min⁻¹).", secondaryInstructions: [])
                         WizardQuestionBlock(question: "Reassess after 30 seconds. What is the Heart Rate?")
-                        
                         Grid(horizontalSpacing: 12, verticalSpacing: 12) {
-                            GridRow {
-                                ActionButton(title: "HR < 60 min⁻¹\n(Start CPR)", icon: "arrow.down.heart", backgroundColor: .red, foregroundColor: .white, height: 65) { viewModel.advanceNLS(to: .compressions) }
-                                ActionButton(title: "HR ≥ 60 min⁻¹\n(Continue Vent.)", icon: "lungs.fill", backgroundColor: .blue, foregroundColor: .white, height: 65) {
-                                    viewModel.advanceNLS(to: .continueVentilation)
-                                }
-                            }
-                            GridRow {
-                                ActionButton(title: "Breathing normally", icon: "heart.fill", backgroundColor: .green, foregroundColor: .white) { viewModel.achieveROSC() }
-                                    .gridCellColumns(2)
-                            }
+                            GridRow { ActionButton(title: "HR < 60 min⁻¹\n(Start CPR)", icon: "arrow.down.heart", backgroundColor: .red, foregroundColor: .white, height: 65) { viewModel.advanceNLS(to: .compressions) }; ActionButton(title: "HR ≥ 60 min⁻¹\n(Continue Vent.)", icon: "lungs.fill", backgroundColor: .blue, foregroundColor: .white, height: 65) { viewModel.advanceNLS(to: .continueVentilation) } }
+                            GridRow { ActionButton(title: "Breathing normally", icon: "heart.fill", backgroundColor: .green, foregroundColor: .white) { viewModel.achieveROSC() }.gridCellColumns(2) }
                         }
                         
                     case .continueVentilation:
-                        WizardInstructionBlock(
-                            title: "Continue Ventilation",
-                            primaryInstruction: "Continue ventilations until confident baby is breathing adequately and HR is stable.",
-                            secondaryInstructions: [
-                                "Maintain ventilation rate at 30 min⁻¹.",
-                                "Assess breathing and heart rate regularly."
-                            ]
-                        )
-                        
+                        WizardInstructionBlock(title: "Continue Ventilation", primaryInstruction: "Continue ventilations until confident baby is breathing adequately and HR is stable.", secondaryInstructions: ["Maintain ventilation rate at 30 min⁻¹.", "Assess breathing and heart rate regularly."])
                         WizardQuestionBlock(question: "Reassess every 30 seconds.")
-                        
                         Grid(horizontalSpacing: 12, verticalSpacing: 12) {
-                            GridRow {
-                                ActionButton(title: "HR < 60 min⁻¹\n(Start CPR)", icon: "arrow.down.heart", backgroundColor: .red, foregroundColor: .white, height: 65) { viewModel.advanceNLS(to: .compressions) }
-                                ActionButton(title: "Not Breathing Adequately\n(Cont. Vent)", icon: "lungs.fill", backgroundColor: .blue, foregroundColor: .white, height: 65) {
-                                    viewModel.logNLSAction("Ventilation continued (Not breathing adequately)")
-                                    viewModel.resetNLSTimer()
-                                }
-                            }
-                            GridRow {
-                                ActionButton(title: "Breathing normally", icon: "heart.fill", backgroundColor: .green, foregroundColor: .white) { viewModel.achieveROSC() }
-                                    .gridCellColumns(2)
-                            }
+                            GridRow { ActionButton(title: "HR < 60 min⁻¹\n(Start CPR)", icon: "arrow.down.heart", backgroundColor: .red, foregroundColor: .white, height: 65) { viewModel.advanceNLS(to: .compressions) }; ActionButton(title: "Not Breathing Adequately\n(Cont. Vent)", icon: "lungs.fill", backgroundColor: .blue, foregroundColor: .white, height: 65) { viewModel.logNLSAction("Ventilation continued (Not breathing adequately)"); viewModel.resetNLSTimer() } }
+                            GridRow { ActionButton(title: "Breathing normally", icon: "heart.fill", backgroundColor: .green, foregroundColor: .white) { viewModel.achieveROSC() }.gridCellColumns(2) }
                         }
 
                     case .compressions:
-                        WizardInstructionBlock(
-                            title: "Chest Compressions",
-                            primaryInstruction: "Start chest compressions (3:1 ratio).",
-                            secondaryInstructions: [
-                                "Synchronise compressions and ventilation.",
-                                "100% Oxygen.",
-                                "Consider SGA or intubation.",
-                                "If HR remains < 60: Vascular access, drugs, check blood glucose, consider other factors."
-                            ]
-                        )
-                        
-                        Button(action: {
-                            metronome.mode = .nls
-                            metronome.toggle()
-                        }) {
-                            HStack(spacing: 12) {
-                                Image(systemName: "metronome.fill")
-                                    .font(.title2)
-                                Text(metronome.isMetronomeOn ? "STOP 3:1 METRONOME" : "START 3:1 METRONOME")
-                                    .fontWeight(.bold)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(metronome.isMetronomeOn ? Color.blue : Color.blue.opacity(0.15))
-                            .foregroundColor(metronome.isMetronomeOn ? .white : .blue)
-                            .cornerRadius(12)
+                        WizardInstructionBlock(title: "Chest Compressions", primaryInstruction: "Start chest compressions (3:1 ratio).", secondaryInstructions: ["Synchronise compressions and ventilation.", "100% Oxygen.", "Consider SGA or intubation.", "If HR remains < 60: Vascular access, drugs, check blood glucose, consider other factors."])
+                        Button(action: { metronome.mode = .nls; metronome.toggle() }) {
+                            HStack(spacing: 12) { Image(systemName: "metronome.fill").font(.title2); Text(metronome.isMetronomeOn ? "STOP 3:1 METRONOME" : "START 3:1 METRONOME").fontWeight(.bold) }
+                            .frame(maxWidth: .infinity).padding().background(metronome.isMetronomeOn ? Color.blue : Color.blue.opacity(0.15)).foregroundColor(metronome.isMetronomeOn ? .white : .blue).cornerRadius(12)
                         }
                         .padding(.bottom, 8)
-                        
                         WizardQuestionBlock(question: "Reassess every 30 seconds. Does HR remain < 60 min⁻¹?")
-                        
                         Grid(horizontalSpacing: 12, verticalSpacing: 12) {
-                            GridRow {
-                                ActionButton(title: "Yes (HR < 60)\n(Continue CPR)", icon: "heart.text.square.fill", backgroundColor: .red, foregroundColor: .white, height: 65) {
-                                    viewModel.logNLSAction("Compressions continued (HR < 60)")
-                                    viewModel.resetNLSTimer()
-                                }
-                                ActionButton(title: "No (HR ≥ 60)\n(Stop CPR)", icon: "lungs.fill", backgroundColor: .blue, foregroundColor: .white, height: 65) { viewModel.advanceNLS(to: .ventilation) }
-                            }
-                            GridRow {
-                                ActionButton(title: "Breathing normally", icon: "heart.fill", backgroundColor: .green, foregroundColor: .white) { viewModel.achieveROSC() }
-                                    .gridCellColumns(2)
-                            }
+                            GridRow { ActionButton(title: "Yes (HR < 60)\n(Continue CPR)", icon: "heart.text.square.fill", backgroundColor: .red, foregroundColor: .white, height: 65) { viewModel.logNLSAction("Compressions continued (HR < 60)"); viewModel.resetNLSTimer() }; ActionButton(title: "No (HR ≥ 60)\n(Stop CPR)", icon: "lungs.fill", backgroundColor: .blue, foregroundColor: .white, height: 65) { viewModel.advanceNLS(to: .ventilation) } }
+                            GridRow { ActionButton(title: "Breathing normally", icon: "heart.fill", backgroundColor: .green, foregroundColor: .white) { viewModel.achieveROSC() }.gridCellColumns(2) }
                         }
                     }
                 }
@@ -728,35 +597,29 @@ struct NewbornActiveArrestContentView: View {
                 .background(Color(UIColor.secondarySystemGroupedBackground))
                 .cornerRadius(16)
                 
-                // Full-width SpO2 Table moved below Wizard card
                 SpO2TargetTable()
                 
-                // Meds and Procedures (Always Available at bottom)
+                // Meds and Procedures
                 VStack(spacing: 12) {
                     Text("Advanced Procedures").font(.headline).foregroundColor(.secondary)
                     Grid(horizontalSpacing: 12, verticalSpacing: 12) {
                         GridRow {
-                            ActionButton(title: "Vascular Access", icon: "drop.fill", backgroundColor: .purple, foregroundColor: .white, action: { viewModel.logNLSAction("Vascular Access Secured") })
+                            ActionButton(title: vascularSuccess ? "Access Logged" : "Log IV / IO", icon: vascularSuccess ? "checkmark.circle.fill" : "drop.fill", backgroundColor: vascularSuccess ? .green : .purple, foregroundColor: .white, action: { showVascularModal = true })
                             ActionButton(title: "Adrenaline", icon: "syringe", backgroundColor: .pink, foregroundColor: .white, action: onLogAdrenaline)
                         }
                         GridRow {
-                            ActionButton(title: "Intubation / SGA", icon: "waveform.path", backgroundColor: .indigo, foregroundColor: .white, action: { showAirwayAdjunctModal = true })
-                                .disabled(viewModel.airwayPlaced)
+                            ActionButton(title: airwaySuccess ? "Airway Logged" : "Intubation / SGA", icon: airwaySuccess ? "checkmark.circle.fill" : "waveform.path", backgroundColor: airwaySuccess ? .green : .indigo, foregroundColor: .white, action: { showAirwayAdjunctModal = true })
                             ActionButton(title: "Other Meds / Vol...", icon: "pills", backgroundColor: .gray, foregroundColor: .white, action: { showOtherDrugsModal = true })
                         }
                         GridRow {
-                            ActionButton(title: "End Resus", icon: "xmark.square.fill", backgroundColor: Color(UIColor.systemRed), foregroundColor: .white, action: viewModel.endArrest)
+                            ActionButton(title: "TOR", icon: "xmark.square.fill", backgroundColor: Color(UIColor.systemRed), foregroundColor: .white, action: { showTORModal = true })
                                 .gridCellColumns(2)
                         }
                     }
                 }
                 
                 AlgorithmGridView(pdfToShow: $pdfToShow)
-                
-                if viewModel.isPreterm {
-                    ChecklistView(title: "Preterm < 32 Weeks Tasks", items: $viewModel.nlsPretermTasks, viewModel: viewModel, showHypothermiaModal: .constant(false))
-                }
-                
+                if viewModel.isPreterm { ChecklistView(title: "Preterm < 32 Weeks Tasks", items: $viewModel.nlsPretermTasks, viewModel: viewModel, showHypothermiaModal: .constant(false)) }
                 EventLogView(events: viewModel.events)
             }
             .padding(.horizontal)
@@ -765,10 +628,7 @@ struct NewbornActiveArrestContentView: View {
             .disabled(viewModel.isTimerPaused)
         }
         .onChange(of: viewModel.nlsState) { newState in
-            // Stop the 3:1 metronome when leaving the compressions state
-            if newState != .compressions {
-                metronome.turnOff()
-            }
+            if newState != .compressions { metronome.turnOff() }
         }
     }
 }
@@ -805,12 +665,65 @@ struct RoscView: View {
 struct EndedView: View {
     @ObservedObject var viewModel: ArrestViewModel
     @Binding var pdfToShow: PDFIdentifiable?
+    @State private var showPLIIEModal = false
     
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
                 if viewModel.arrestType == .general {
-                    ChecklistView(title: "Actions Following Death", items: $viewModel.postMortemTasks, viewModel: viewModel, showHypothermiaModal: .constant(false))
+                    
+                    // NEW: VOD vs Care After Death Flow
+                    if !viewModel.vodConfirmed {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Verification of Death (VOD)")
+                                .font(.title2).bold()
+                                .foregroundColor(.primary)
+                            
+                            Text("Assess for a minimum of 5 minutes after asystole onset.")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.leading)
+                            
+                            ChecklistView(title: "VOD Criteria", items: $viewModel.vodTasks, viewModel: viewModel, showHypothermiaModal: .constant(false))
+                            
+                            let allChecked = viewModel.vodTasks.allSatisfy { $0.isCompleted }
+                            
+                            ActionButton(title: "Confirm VOD", icon: "checkmark.seal.fill", backgroundColor: allChecked ? .green : .gray, foregroundColor: .white) {
+                                viewModel.logVOD()
+                            }
+                            .disabled(!allChecked)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                        .background(Color(UIColor.secondarySystemGroupedBackground))
+                        .cornerRadius(12)
+                        
+                    } else {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Care After Death")
+                                .font(.title2).bold()
+                                .foregroundColor(.primary)
+                            
+                            Text("If suspicious or unnatural circumstances are suspected, leave equipment in situ, minimize contamination, and contact the Police.")
+                                .font(.footnote)
+                                .foregroundColor(.red)
+                                .multilineTextAlignment(.leading)
+                                .padding(8)
+                                .background(Color.red.opacity(0.1))
+                                .cornerRadius(8)
+                            
+                            ActionButton(title: "Breaking Bad News (PLIIE)", icon: "person.2.wave.2.fill", backgroundColor: .blue, foregroundColor: .white) {
+                                showPLIIEModal = true
+                            }
+                            
+                            ChecklistView(title: "Actions Following Death", items: $viewModel.postMortemTasks, viewModel: viewModel, showHypothermiaModal: .constant(false))
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                        .background(Color(UIColor.secondarySystemGroupedBackground))
+                        .cornerRadius(12)
+                    }
+                    
                 } else {
                     ActionButton(title: "Update Parents & Complete Records", icon: "person.2.fill", backgroundColor: .gray, foregroundColor: .white, action: { viewModel.logNLSAction("Updated Parents & Records") })
                 }
@@ -821,6 +734,9 @@ struct EndedView: View {
             }
             .padding()
             .padding(.bottom, 120)
+        }
+        .sheet(isPresented: $showPLIIEModal) {
+            PLIIEGuidanceModal(isPresented: $showPLIIEModal)
         }
     }
 }
@@ -871,6 +787,10 @@ struct ActionGridView: View {
     @Binding var showOtherDrugsModal: Bool
     @Binding var showEtco2Modal: Bool
     @Binding var showAirwayAdjunctModal: Bool
+    @Binding var showVascularModal: Bool
+    @Binding var showTORModal: Bool
+    @Binding var airwaySuccess: Bool
+    @Binding var vascularSuccess: Bool
     
     let onLogAdrenaline: () -> Void
     let onLogAmiodarone: () -> Void
@@ -923,11 +843,24 @@ struct ActionGridView: View {
                 Text("Procedures").font(.headline).foregroundColor(.secondary)
                 Grid(horizontalSpacing: 12, verticalSpacing: 12) {
                     GridRow {
-                        ActionButton(title: "Adv. Airway", icon: "lungs", backgroundColor: .blue, foregroundColor: .white, action: {
-                            showAirwayAdjunctModal = true
-                        })
-                        .disabled(viewModel.airwayPlaced)
+                        ActionButton(
+                            title: airwaySuccess ? "Airway Logged" : "Adv. Airway",
+                            icon: airwaySuccess ? "checkmark.circle.fill" : "lungs",
+                            backgroundColor: airwaySuccess ? .green : .blue,
+                            foregroundColor: .white,
+                            action: { showAirwayAdjunctModal = true }
+                        )
                         ActionButton(title: "Log ETCO2", icon: "waveform.path", backgroundColor: .teal, foregroundColor: .white, action: { showEtco2Modal = true })
+                    }
+                    GridRow {
+                        ActionButton(
+                            title: vascularSuccess ? "Access Logged" : "Log IV / IO",
+                            icon: vascularSuccess ? "checkmark.circle.fill" : "drop.fill",
+                            backgroundColor: vascularSuccess ? .green : .purple,
+                            foregroundColor: .white,
+                            action: { showVascularModal = true }
+                        )
+                        .gridCellColumns(2) // Stretches across the full screen beautifully
                     }
                 }
             }
@@ -937,7 +870,7 @@ struct ActionGridView: View {
                 Grid(horizontalSpacing: 12, verticalSpacing: 12) {
                     GridRow {
                         ActionButton(title: "ROSC", icon: "heart.fill", backgroundColor: .green, foregroundColor: .white, action: viewModel.achieveROSC)
-                        ActionButton(title: "End Arrest", icon: "xmark.square.fill", backgroundColor: Color(UIColor.systemRed), foregroundColor: .white, action: viewModel.endArrest)
+                        ActionButton(title: "TOR", icon: "xmark.square.fill", backgroundColor: Color(UIColor.systemRed), foregroundColor: .white, action: { showTORModal = true })
                     }
                 }
             }
@@ -945,6 +878,7 @@ struct ActionGridView: View {
     }
 }
 
+// ... Additional helper views (AdrenalineTimerView, ChecklistView, AlgorithmGridView, etc) remain identical.
 struct AdrenalineTimerView: View {
     let timeRemaining: TimeInterval
     
@@ -964,6 +898,7 @@ struct AdrenalineTimerView: View {
 
 struct AdrenalineDueWarning: View {
     let action: () -> Void
+    var onDismiss: (() -> Void)? = nil
     
     var body: some View {
         Button(action: action) {
@@ -980,6 +915,12 @@ struct AdrenalineDueWarning: View {
         }
         .buttonStyle(ScaleButtonStyle())
         .modifier(PulsatingModifier(isActive: true))
+        .gesture(
+            DragGesture(minimumDistance: 20, coordinateSpace: .local)
+                .onEnded { value in
+                    if value.translation.width < -40 { onDismiss?() }
+                }
+        )
     }
 }
 
@@ -1119,23 +1060,27 @@ struct ChecklistItemView: View {
     @Binding var item: ChecklistItem
     
     var body: some View {
-        HStack {
+        HStack(alignment: .top) { // Align top for multiline
             Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
                 .foregroundColor(item.isCompleted ? .green : .secondary)
                 .font(.title2)
             
-            Text(item.name)
-                .strikethrough(item.isCompleted, color: .primary)
-            
-            if item.hypothermiaStatus != .none && item.hypothermiaStatus != .normothermic {
-                Text("(\(item.hypothermiaStatus.rawValue.capitalized))")
-                    .font(.caption)
-                    .fontWeight(.bold)
-                    .foregroundColor(item.hypothermiaStatus == .severe ? .blue : .orange)
+            VStack(alignment: .leading, spacing: 2) {
+                // Using LocalizedStringKey renders the **Markdown** natively!
+                Text(LocalizedStringKey(item.name))
+                    .strikethrough(item.isCompleted, color: .primary)
+                    .multilineTextAlignment(.leading) // Force left alignment
+                
+                if item.hypothermiaStatus != .none && item.hypothermiaStatus != .normothermic {
+                    Text("(\(item.hypothermiaStatus.rawValue.capitalized))")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(item.hypothermiaStatus == .severe ? .blue : .orange)
+                }
             }
-            
             Spacer()
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .foregroundColor(.primary)
         .contentShape(Rectangle())
     }

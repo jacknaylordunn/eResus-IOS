@@ -25,9 +25,20 @@ struct ArrestView: View {
     @State private var showSummaryModal = false
     @State private var showResetModal = false
     @State private var showAirwayAdjunctModal = false
+    @State private var showVascularModal = false
+    @State private var showTORModal = false
     @Binding var pdfToShow: PDFIdentifiable?
     @State private var drugToLog: DrugToLog?
     @State private var drugConfirmationToShow: DrugConfirmation?
+    
+    // Transfer Modals
+    @State private var showTransferModal = false
+    @State private var showQRScanner = false
+    @State private var scannedCode: String? = nil
+    
+    // Success Animation States
+    @State private var airwaySuccess = false
+    @State private var vascularSuccess = false
     
     @AppStorage("showDosagePrompts") private var showDosagePrompts: Bool = false
     
@@ -51,7 +62,12 @@ struct ArrestView: View {
                                 showOtherDrugsModal: $showOtherDrugsModal,
                                 showEtco2Modal: $showEtco2Modal,
                                 showHypothermiaModal: $showHypothermiaModal,
-                                pdfToShow: $pdfToShow, showAirwayAdjunctModal: $showAirwayAdjunctModal,
+                                pdfToShow: $pdfToShow,
+                                showAirwayAdjunctModal: $showAirwayAdjunctModal,
+                                showVascularModal: $showVascularModal,
+                                showTORModal: $showTORModal,
+                                airwaySuccess: $airwaySuccess,
+                                vascularSuccess: $vascularSuccess,
                                 onLogAdrenaline: handleAdrenaline,
                                 onLogAmiodarone: handleAmiodarone,
                                 onLogLidocaine: handleLidocaine
@@ -61,7 +77,12 @@ struct ArrestView: View {
                                 viewModel: viewModel,
                                 metronome: metronome,
                                 showOtherDrugsModal: $showOtherDrugsModal,
-                                pdfToShow: $pdfToShow, showAirwayAdjunctModal: $showAirwayAdjunctModal,
+                                pdfToShow: $pdfToShow,
+                                showAirwayAdjunctModal: $showAirwayAdjunctModal,
+                                showVascularModal: $showVascularModal,
+                                showTORModal: $showTORModal,
+                                airwaySuccess: $airwaySuccess,
+                                vascularSuccess: $vascularSuccess,
                                 onLogAdrenaline: handleAdrenaline
                             )
                         }
@@ -103,6 +124,23 @@ struct ArrestView: View {
         .sheet(isPresented: $viewModel.showPatientInfoPrompt) {
             PatientInfoPromptView(viewModel: viewModel)
         }
+        .sheet(isPresented: $showTransferModal) {
+            SessionTransferModal(viewModel: viewModel)
+        }
+        .fullScreenCover(isPresented: $showQRScanner) {
+            QRScannerView(scannedCode: $scannedCode)
+                .ignoresSafeArea()
+        }
+        .onChange(of: scannedCode) { newValue in
+            if let code = newValue {
+                FirebaseManager.shared.fetchSessionTransfer(transferId: code) { state in
+                    if let state = state {
+                        viewModel.restoreFromTransfer(state: state)
+                    }
+                }
+                scannedCode = nil
+            }
+        }
         .sheet(isPresented: $showOtherDrugsModal) {
             OtherDrugsModal(isPresented: $showOtherDrugsModal, onSelectDrug: handleOtherDrug)
         }
@@ -115,20 +153,32 @@ struct ArrestView: View {
         .sheet(isPresented: $showAirwayAdjunctModal) {
             AirwayAdjunctModal(isPresented: $showAirwayAdjunctModal) { type in
                 viewModel.logAirwayPlaced(type: type)
+                triggerAirwaySuccess()
             }
         }
-        .sheet(isPresented: $showSummaryModal) {
-            SummaryView(
-                events: viewModel.events,
-                totalTime: viewModel.totalArrestTime,
-                startTime: viewModel.arrestStartTime,
-                shockCount: viewModel.shockCount,
-                adrenalineCount: viewModel.adrenalineCount,
-                amiodaroneCount: viewModel.amiodaroneCount,
-                lidocaineCount: viewModel.lidocaineCount,
-                roscTime: viewModel.roscTime
-            )
+        .sheet(isPresented: $showVascularModal) {
+            VascularAccessModal(isPresented: $showVascularModal) { type, location, gauge, success in
+                viewModel.logVascularAccess(type: type, location: location, gauge: gauge, successful: success)
+                triggerVascularSuccess()
+            }
         }
+        .sheet(isPresented: $showTORModal) {
+            TORGuidanceModal(viewModel: viewModel, isPresented: $showTORModal)
+        }
+        .sheet(isPresented: $showSummaryModal) {
+                    SummaryView(
+                        events: viewModel.events,
+                        totalTime: viewModel.totalArrestTime,
+                        startTime: viewModel.arrestStartTime,
+                        shockCount: viewModel.shockCount,
+                        adrenalineCount: viewModel.adrenalineCount,
+                        amiodaroneCount: viewModel.amiodaroneCount,
+                        lidocaineCount: viewModel.lidocaineCount,
+                        roscTime: viewModel.roscTime,
+                        patientAge: viewModel.patientAgeStr.isEmpty ? nil : viewModel.patientAgeStr,
+                        patientGender: viewModel.patientGenderStr.isEmpty ? nil : viewModel.patientGenderStr
+                    )
+                }
         .sheet(isPresented: $showResetModal) {
             ResetModalView(
                 isPresented: $showResetModal,
@@ -141,23 +191,27 @@ struct ArrestView: View {
             )
         }
         .sheet(item: $drugToLog) { drug in
-            DosageEntryModal(drug: drug, amiodaroneDoseCount: viewModel.amiodaroneCount) { dosage, ageCategory in
-                if let age = ageCategory {
-                    viewModel.setPatientAgeCategory(age)
+                    DosageEntryModal(
+                        drug: drug,
+                        amiodaroneDoseCount: viewModel.amiodaroneCount,
+                        patientAgeStr: $viewModel.patientAgeStr
+                    ) { dosage, ageCategory in
+                        if let age = ageCategory {
+                            viewModel.setPatientAgeCategory(age)
+                        }
+                        
+                        switch drug {
+                        case .adrenaline:
+                            viewModel.logAdrenaline(with: dosage)
+                        case .amiodarone:
+                            viewModel.logAmiodarone(with: dosage)
+                        case .lidocaine:
+                            viewModel.logLidocaine(with: dosage)
+                        case .other(let name):
+                            viewModel.logOtherDrug(name, with: dosage)
+                        }
+                    }
                 }
-                
-                switch drug {
-                case .adrenaline:
-                    viewModel.logAdrenaline(with: dosage)
-                case .amiodarone:
-                    viewModel.logAmiodarone(with: dosage)
-                case .lidocaine:
-                    viewModel.logLidocaine(with: dosage)
-                case .other(let name):
-                    viewModel.logOtherDrug(name, with: dosage)
-                }
-            }
-        }
         .alert(
             "Confirm Dosage",
             isPresented: Binding(
@@ -186,6 +240,22 @@ struct ArrestView: View {
         }
     }
     
+    // MARK: - Success Animation Triggers
+    private func triggerAirwaySuccess() {
+        withAnimation { airwaySuccess = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            withAnimation { airwaySuccess = false }
+        }
+    }
+    
+    private func triggerVascularSuccess() {
+        withAnimation { vascularSuccess = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            withAnimation { vascularSuccess = false }
+        }
+    }
+    
+    // MARK: - Action Handlers
     private func handleAdrenaline() {
         if showDosagePrompts {
             if let age = viewModel.patientAgeCategory {

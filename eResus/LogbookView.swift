@@ -108,7 +108,7 @@ struct LogbookView: View {
                         }
                         
                         Button(role: .destructive) {
-                            modelContext.delete(log)
+                            deleteSingleLog(log)
                         } label: {
                             Label("Delete Log", systemImage: "trash")
                         }
@@ -118,18 +118,20 @@ struct LogbookView: View {
             }
             .navigationTitle("Logbook")
             .sheet(item: $selectedLog) { log in
-                // Standard Summary View
-                SummaryView(
-                    events: Array(log.events),
-                    totalTime: log.totalDuration,
-                    startTime: log.startTime,
-                    shockCount: log.shockCount,
-                    adrenalineCount: log.adrenalineCount,
-                    amiodaroneCount: log.amiodaroneCount,
-                    lidocaineCount: 0,
-                    roscTime: log.roscTime
-                )
-            }
+                            // Standard Summary View
+                            SummaryView(
+                                events: Array(log.events),
+                                totalTime: log.totalDuration,
+                                startTime: log.startTime,
+                                shockCount: log.shockCount,
+                                adrenalineCount: log.adrenalineCount,
+                                amiodaroneCount: log.amiodaroneCount,
+                                lidocaineCount: 0,
+                                roscTime: log.roscTime,
+                                patientAge: log.patientAge,
+                                patientGender: log.patientGender
+                            )
+                        }
             .sheet(item: $logToEdit) { log in
                 // NEW: Research Demographic Edit View
                 EditLogPatientInfoView(log: log)
@@ -137,10 +139,19 @@ struct LogbookView: View {
         }
     }
     
+    private func deleteSingleLog(_ log: SavedArrestLog) {
+        withAnimation {
+            FirebaseManager.shared.deleteLog(log)
+            modelContext.delete(log)
+        }
+    }
+    
     private func deleteLogs(offsets: IndexSet) {
         withAnimation {
             for index in offsets {
-                modelContext.delete(logs[index])
+                let log = logs[index]
+                FirebaseManager.shared.deleteLog(log)
+                modelContext.delete(log)
             }
         }
     }
